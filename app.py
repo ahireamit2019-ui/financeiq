@@ -43,7 +43,7 @@ YF_SESSION.headers.update({"User-Agent": "Mozilla/5.0"})
 
 def yf_ticker(symbol: str) -> "yf.Ticker":
     """Create a yfinance Ticker using our timeout-protected session."""
-    return yf.Ticker(symbol, session=YF_SESSION)
+    return yf.Ticker(symbol)
 
 # ---------------------------------------------------------------------------
 # Static lookup data
@@ -756,7 +756,7 @@ def watchlist(symbols):
         items = []
         if len(yf_symbols) == 1:
             data = yf.download(yf_symbols[0], period="2d", interval="1d",
-                                progress=False, session=YF_SESSION)
+                                progress=False)
             closes = data["Close"].dropna() if data is not None else None
             if closes is not None and len(closes) >= 1:
                 last = closes.iloc[-1]
@@ -767,7 +767,7 @@ def watchlist(symbols):
                 items.append({"symbol": resolved[0], "price": None, "change_pct": None})
         else:
             data = yf.download(yf_symbols, period="2d", interval="1d", group_by="ticker",
-                                progress=False, threads=True, session=YF_SESSION)
+                                progress=False, threads=True)
             for orig, ysym in zip(resolved, yf_symbols):
                 try:
                     df = data[ysym]
@@ -810,7 +810,7 @@ def market_overview():
         movers = []
         symbols = [f"{s}.NS" for s in NIFTY50_SYMBOLS]
         data = yf.download(symbols, period="2d", interval="1d", group_by="ticker",
-                            progress=False, threads=True, session=YF_SESSION)
+                            progress=False, threads=True)
 
         for s in NIFTY50_SYMBOLS:
             try:
@@ -859,7 +859,7 @@ def most_active():
     try:
         symbols = [f"{s}.NS" for s in NIFTY50_SYMBOLS]
         data = yf.download(symbols, period="2d", interval="1d", group_by="ticker",
-                            progress=False, threads=True, session=YF_SESSION)
+                            progress=False, threads=True)
         for s in NIFTY50_SYMBOLS:
             try:
                 df = data[f"{s}.NS"] if len(symbols) > 1 else data
