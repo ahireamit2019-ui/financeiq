@@ -1415,72 +1415,100 @@ def earnings_calendar():
 # IPO showcase
 #
 # IMPORTANT: there is no free, reliable API for *upcoming* IPOs with verified
-# 3-year financials. Fabricating specific profit/debt/revenue figures for
-# real, currently-fundraising companies would risk misleading retail
-# investors, so we don't do that. Instead this endpoint showcases a small set
-# of recent, well-documented IPOs as an educational reference, with the AI
-# clearly instructed to mark figures as approximate and to recommend checking
-# the official prospectus (RHP/DRHP) for exact numbers.
+# financials, price bands, or lot sizes. To keep this section useful and
+# reasonably current without fabricating data, we:
+#   1. Pull recent real news articles about open/upcoming Indian IPOs
+#      (NewsAPI, falling back to Google News RSS).
+#   2. Ask Claude to identify the distinct companies mentioned and extract
+#      whatever concrete details (price band, lot size, dates, issue size)
+#      are present in those articles.
+#   3. Claude fills in an educational company overview plus green/red flags
+#      based on its general knowledge, clearly distinguishing "from news"
+#      vs "general analysis", and we tell the user to verify on the official
+#      RHP/DRHP and exchange websites before investing.
 # ---------------------------------------------------------------------------
-
-IPO_SHOWCASE_COMPANIES = [
-    {"name": "Swiggy", "symbol": "SWIGGY", "sector": "Food delivery & quick commerce"},
-    {"name": "Hyundai Motor India", "symbol": "HYUNDAI", "sector": "Passenger vehicles"},
-    {"name": "NTPC Green Energy", "symbol": "NTPCGREEN", "sector": "Renewable power generation"},
-    {"name": "Vishal Mega Mart", "symbol": "VMM", "sector": "Retail (value fashion & FMCG)"},
-    {"name": "Ola Electric Mobility", "symbol": "OLAELEC", "sector": "Electric two-wheelers"},
-]
 
 
 @app.route("/api/ipo/showcase")
-@cache.cached(timeout=86400)
+@cache.cached(timeout=10800)
 def ipo_showcase():
     api_key = get_anthropic_key()
     note = (
-        "Live data on upcoming IPOs with audited financials isn't available "
-        "from free APIs. The companies below are recent, well-documented IPOs "
-        "shown for reference on how this section works. All figures are "
-        "AI-generated approximations for education only - always verify exact "
-        "numbers in the company's official prospectus (RHP/DRHP) before investing."
+        "Live IPO data (price band, lot size, dates) is extracted from recent "
+        "news articles and may be incomplete or out of date. Company overviews "
+        "and green/red flags are AI-generated for education only. Always verify "
+        "exact details in the official prospectus (RHP/DRHP) and on the NSE/BSE "
+        "websites before investing."
     )
 
     if not api_key:
         return jsonify({"note": note, "ipos": [], "error": "No Anthropic API key configured. Add one in Settings to generate IPO overviews."})
 
+    # Step 1: gather real, recent news about open/upcoming IPOs in India
+    err, items = fetch_news(
+        "upcoming IPO India price band lot size mainboard", limit=15
+    )
+    if err or not items:
+        err2, items2 = fetch_news("IPO opens India subscription GMP", limit=15)
+        if not err2:
+            items = items2
+
+    if not items:
+        return jsonify({"note": note, "ipos": [], "error": "Could not fetch IPO news right now. Try again later."})
+
+    news_context = [
+        {
+            "title": it.get("title", ""),
+            "description": it.get("description", ""),
+            "source": it.get("source", ""),
+            "published": it.get("published", ""),
+            "link": it.get("link", ""),
+        }
+        for it in items
+    ]
+
+    # Step 2: ask Claude to identify distinct companies and structure the data
     system_prompt = (
         "You are a financial educator writing for an Indian retail-investor app. "
-        "For each company listed, return an object with: "
-        "'overview' (an ORIGINAL ~150 word plain-English description of the "
-        "business and its IPO), "
-        "'financials' (an object with 'years': a list of 3 recent fiscal year "
-        "labels like 'FY22','FY23','FY24', and 'revenue_cr', 'profit_cr', "
-        "'assets_cr', 'debt_cr': each a list of 3 APPROXIMATE numbers in INR "
-        "crore, rounded, based on your general knowledge - these are "
-        "illustrative estimates, not exact figures), "
-        "'green_flags' (5 short bullet points - genuine positives an investor "
-        "might note), and "
-        "'red_flags' (5 short bullet points - genuine risks or concerns an "
-        "investor might note). "
-        "Be balanced and educational, not promotional. "
-        "Return ONLY a valid JSON array of these objects, one per company, in "
-        "the same order as the input, with no extra text."
+        "You are given a list of recent news headlines/snippets about Indian IPOs "
+        "(mainboard, currently open or upcoming in the next few weeks). "
+        "Identify up to 5 DISTINCT companies with the most concrete information. "
+        "Prefer companies whose price band, lot size, or open/close dates are "
+        "mentioned in the snippets. Skip duplicates and SME-only IPOs if better "
+        "mainboard options are available. "
+        "For each company, return an object with these exact keys: "
+        "'name' (company name), "
+        "'sector' (one short phrase), "
+        "'status' (one of 'Open', 'Upcoming', or 'Recently Listed', based on the news), "
+        "'price_band' (string like '₹163 - ₹172 per share', or 'Not yet announced' if unknown), "
+        "'lot_size' (number of shares per lot as a string, or 'Not yet announced'), "
+        "'min_investment' (approx retail minimum investment in INR as a string, "
+        "calculated as price_band upper end x lot_size if both are known, else "
+        "'Not yet announced'), "
+        "'issue_dates' (string like 'Opens 23 Apr - Closes 27 Apr 2026', or 'TBA'), "
+        "'issue_size' (string like '₹74 Cr', or 'Not disclosed'), "
+        "'about' (an ORIGINAL ~120 word plain-English description of what the "
+        "company does and why it's going public, based on the news and your "
+        "general knowledge), "
+        "'green_flags' (exactly 5 short bullet points - genuine positives), "
+        "'red_flags' (exactly 5 short bullet points - genuine risks or concerns), "
+        "'source_note' (1 short sentence noting which details came from the news "
+        "vs general context, e.g. 'Price band and dates from recent news; "
+        "company overview and flags are general analysis.'). "
+        "Be balanced and educational, not promotional. Do not invent specific "
+        "price bands or lot sizes not supported by the news snippets - use "
+        "'Not yet announced' instead. "
+        "Return ONLY a valid JSON array of these objects, with no extra text."
     )
 
     result, err = call_claude_haiku(
-        system_prompt, json.dumps(IPO_SHOWCASE_COMPANIES), api_key, max_tokens=8192
+        system_prompt, json.dumps(news_context, default=str), api_key, max_tokens=8192
     )
 
     if err or not isinstance(result, list):
         return jsonify({"note": note, "ipos": [], "error": err or "Could not generate IPO data."})
 
-    ipos = []
-    for i, company in enumerate(IPO_SHOWCASE_COMPANIES):
-        entry = dict(company)
-        if i < len(result) and isinstance(result[i], dict):
-            entry.update(result[i])
-        ipos.append(entry)
-
-    return jsonify({"note": note, "ipos": ipos})
+    return jsonify({"note": note, "ipos": result})
 
 
 # ---------------------------------------------------------------------------

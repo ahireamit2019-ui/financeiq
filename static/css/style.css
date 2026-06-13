@@ -629,6 +629,22 @@ a:hover { text-decoration: underline; }
 .ipo-card .ipo-name { font-weight: 700; font-size: 1rem; }
 .ipo-card .ipo-sector { color: var(--text-muted); font-size: 0.82rem; }
 .ipo-card .ipo-cta { color: var(--primary-light); font-size: 0.82rem; margin-top: 6px; }
+.ipo-card .ipo-price-band { font-family: var(--font-data); font-size: 0.85rem; color: var(--text); }
+.ipo-status-badge {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--text-muted);
+}
+.ipo-status-open { background: rgba(16, 185, 129, 0.18); color: var(--positive); }
+.ipo-status-upcoming { background: rgba(37, 99, 235, 0.18); color: var(--primary-light); }
+.ipo-status-recently-listed { background: rgba(148, 163, 184, 0.18); color: var(--text-muted); }
 
 .flags-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .financials-table th, .financials-table td { text-align: right; }

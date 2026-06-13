@@ -238,9 +238,11 @@ async function loadIpoSection() {
 
   el.innerHTML = data.ipos.map((ipo, i) => `
     <div class="card ipo-card" data-ipo-index="${i}">
+      <div class="ipo-status-badge ipo-status-${(ipo.status || "").toLowerCase().replace(/\s+/g, "-")}">${ipo.status || ""}</div>
       <div class="ipo-name">${ipo.name}</div>
       <div class="ipo-sector">${ipo.sector || ""}</div>
-      <div class="ipo-cta">Tap for full overview →</div>
+      <div class="ipo-price-band">${ipo.price_band || "Price band: Not yet announced"}</div>
+      <div class="ipo-cta">Tap for full details →</div>
     </div>`).join("");
 
   el.querySelectorAll(".ipo-card").forEach((card) => {
@@ -249,40 +251,33 @@ async function loadIpoSection() {
 }
 
 function openIpoModal(ipo) {
-  const fin = ipo.financials || {};
-  const years = fin.years || [];
-  const rows = ["revenue_cr", "profit_cr", "assets_cr", "debt_cr"];
-  const rowLabels = {
-    revenue_cr: "Revenue (₹ Cr)",
-    profit_cr: "Net Profit (₹ Cr)",
-    assets_cr: "Total Assets (₹ Cr)",
-    debt_cr: "Total Debt (₹ Cr)",
-  };
+  const greenFlags = (ipo.green_flags || []).map((f) => `<li>${f}</li>`).join("");
+  const redFlags = (ipo.red_flags || []).map((f) => `<li>${f}</li>`).join("");
 
-  const financialsTable = years.length ? `
+  const detailsTable = `
     <div class="table-wrap">
-      <table class="data-table financials-table">
-        <thead><tr><th>Metric</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr></thead>
+      <table class="data-table">
         <tbody>
-          ${rows.map((r) => `
-            <tr><td>${rowLabels[r]}</td>${(fin[r] || []).map((v) => `<td>${formatCrore(v)}</td>`).join("")}</tr>
-          `).join("")}
+          <tr><td>Status</td><td>${ipo.status || "—"}</td></tr>
+          <tr><td>Price Band</td><td>${ipo.price_band || "Not yet announced"}</td></tr>
+          <tr><td>Lot Size</td><td>${ipo.lot_size || "Not yet announced"}</td></tr>
+          <tr><td>Min. Investment (Retail)</td><td>${ipo.min_investment || "Not yet announced"}</td></tr>
+          <tr><td>Issue Dates</td><td>${ipo.issue_dates || "TBA"}</td></tr>
+          <tr><td>Issue Size</td><td>${ipo.issue_size || "Not disclosed"}</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="card-note">Figures are AI-generated approximations for education only — verify exact numbers in the official prospectus (RHP/DRHP).</p>
-  ` : `<p class="card-note">Financial details not available.</p>`;
-
-  const greenFlags = (ipo.green_flags || []).map((f) => `<li>${f}</li>`).join("");
-  const redFlags = (ipo.red_flags || []).map((f) => `<li>${f}</li>`).join("");
+  `;
 
   openModal(`
     <div class="modal-title">${ipo.name}</div>
     <div class="modal-subtitle">${ipo.sector || ""}</div>
-    <p>${ipo.overview || "No overview available."}</p>
 
-    <div class="modal-section-title">3-Year Financial Snapshot</div>
-    ${financialsTable}
+    <div class="modal-section-title">IPO Details</div>
+    ${detailsTable}
+
+    <div class="modal-section-title">About the Company</div>
+    <p>${ipo.about || "No overview available."}</p>
 
     <div class="modal-section-title">Green &amp; Red Flags</div>
     <div class="flags-grid">
@@ -295,6 +290,8 @@ function openIpoModal(ipo) {
         <ul class="pros-cons-list negatives">${redFlags || "<li>Not available</li>"}</ul>
       </div>
     </div>
+
+    <p class="card-note">${ipo.source_note || ""} Always verify exact details in the official prospectus (RHP/DRHP) and on NSE/BSE before investing.</p>
   `);
 }
 
