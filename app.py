@@ -45,6 +45,23 @@ def yf_ticker(symbol: str) -> "yf.Ticker":
     """Create a yfinance Ticker using our timeout-protected session."""
     return yf.Ticker(symbol)
 
+def get_info_with_retry(ticker, retries=2, delay=1.5):
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            info = ticker.info
+            if info and (info.get("regularMarketPrice") is not None or info.get("currentPrice") is not None):
+                return info
+            last_err = info
+        except Exception as e:
+            last_err = e
+        if attempt < retries:
+            time.sleep(delay * (attempt + 1))
+    if isinstance(last_err, Exception):
+        raise last_err
+    return last_err or {}
+
+
 # ---------------------------------------------------------------------------
 # Static lookup data
 # ---------------------------------------------------------------------------
@@ -543,12 +560,12 @@ def stock_data(symbol):
     try:
         nse_symbol = resolve_symbol(symbol)
         ticker = yf_ticker(f"{nse_symbol}.NS")
-        info = ticker.info
+        info = get_info_with_retry(ticker)
 
         if not info or info.get("regularMarketPrice") is None and info.get("currentPrice") is None:
             # try BSE
             ticker = yf_ticker(f"{nse_symbol}.BO")
-            info = ticker.info
+            info = get_info_with_retry(ticker)
 
         if not info or (info.get("regularMarketPrice") is None and info.get("currentPrice") is None):
             return jsonify({"error": f"Could not find data for '{symbol}'. Try the exact NSE symbol."})
@@ -602,7 +619,7 @@ def stock_news(symbol):
         nse_symbol = resolve_symbol(symbol)
         # try to get a friendlier company name
         try:
-            info = yf_ticker(f"{nse_symbol}.NS").info
+            info = get_info_with_retry(yf_ticker(f"{nse_symbol}.NS"))
             company_name = info.get("longName") or info.get("shortName") or nse_symbol
         except Exception:
             company_name = nse_symbol
@@ -661,7 +678,7 @@ def corporate_actions(symbol):
 def stock_scorecard(symbol):
     try:
         nse_symbol = resolve_symbol(symbol)
-        info = yf_ticker(f"{nse_symbol}.NS").info
+        info = get_info_with_retry(yf_ticker(f"{nse_symbol}.NS"))
 
         if not info or (info.get("regularMarketPrice") is None and info.get("currentPrice") is None):
             return jsonify({"error": f"Could not find data for '{symbol}'."})
