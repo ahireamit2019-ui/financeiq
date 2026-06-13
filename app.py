@@ -4,9 +4,6 @@ Flask backend - all data fetched live from free APIs (yfinance, Google News RSS,
 exchangerate-api.com). AI analysis powered by Anthropic Claude (Haiku).
 """
 
-from dotenv import load_dotenv
-load_dotenv()
-
 import os
 import json
 import time
@@ -31,7 +28,7 @@ cache = Cache(app, config={"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT":
 # Free tier: 60 API calls/minute, no daily cap.
 # NSE symbols on Finnhub use the format: NSE:RELIANCE, NSE:HDFCBANK etc.
 # ---------------------------------------------------------------------------
-FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "")
+FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "d8mrhepr01qp7ubmtnj0d8mrhepr01qp7ubmtnjg")
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 
 
@@ -468,6 +465,57 @@ def fmt_crore(value):
         return None
 
 
+def fetch_newsapi(query: str, limit: int = 10) -> tuple:
+    """Fetch news from NewsAPI.org (primary source, requires NEWS_API_KEY env var).
+
+    Returns (error_or_None, items_list) — same contract as fetch_google_news_rss
+    so callers can treat both interchangeably.
+    Free tier: 100 requests/day, articles from last 30 days.
+    """
+    api_key = os.environ.get("NEWS_API_KEY", "")
+    if not api_key:
+        return {"error": "No NEWS_API_KEY configured"}, []
+
+    try:
+        resp = requests.get(
+            "https://newsapi.org/v2/everything",
+            params={
+                "q": query,
+                "language": "en",
+                "sortBy": "publishedAt",
+                "pageSize": limit,
+                "apiKey": api_key,
+            },
+            timeout=8,
+        )
+        data = resp.json()
+        if data.get("status") != "ok":
+            return {"error": data.get("message", "NewsAPI error")}, []
+
+        items = []
+        for article in data.get("articles", []):
+            title = article.get("title") or ""
+            source = (article.get("source") or {}).get("name") or "NewsAPI"
+            link = article.get("url") or ""
+            published = article.get("publishedAt") or ""
+
+            # Skip removed articles
+            if title == "[Removed]" or not title:
+                continue
+
+            items.append({
+                "title": title,
+                "source": source,
+                "link": link,
+                "published": published,
+                "description": article.get("description") or "",
+            })
+
+        return None, items[:limit]
+    except Exception as e:
+        return {"error": f"NewsAPI request failed: {e}"}, []
+
+
 def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "when:7d"):
     """Fetch and parse Google News RSS for a query. No API key required.
 
@@ -521,6 +569,18 @@ def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "when:7d"):
     except Exception as e:
         return {"error": f"Could not fetch news: {e}"}, items
     return None, items
+
+
+def fetch_news(query: str, limit: int = 10) -> tuple:
+    """Smart news fetcher: tries NewsAPI first, falls back to Google News RSS.
+
+    Returns (error_or_None, items_list).
+    """
+    err, items = fetch_newsapi(query, limit=limit)
+    if not err and items:
+        return None, items
+    # Fallback to Google News RSS
+    return fetch_google_news_rss(query, limit=limit)
 
 
 def get_anthropic_key():
@@ -778,7 +838,7 @@ def stock_news(symbol):
         except Exception:
             company_name = nse_symbol
 
-        err, items = fetch_google_news_rss(f"{company_name} stock India")
+        err, items = fetch_news(f"{company_name} stock India", limit=5)
         if err:
             return jsonify(err)
 
@@ -1225,7 +1285,7 @@ COMMODITY_NEWS_QUERIES = {
 @cache.cached(timeout=3600)
 def commodity_news(name):
     query = COMMODITY_NEWS_QUERIES.get(name, f"{name} price India")
-    err, items = fetch_google_news_rss(query, limit=5)
+    err, items = fetch_news(query, limit=5)
     if err:
         return jsonify(err)
 
@@ -1293,7 +1353,7 @@ NEWS_CATEGORY_CONFIG = {
 def news_by_category(category):
     query = NEWS_CATEGORY_QUERIES.get(category, f"India {category} news")
     config = NEWS_CATEGORY_CONFIG.get(category, {"limit": 8, "words": 150})
-    err, items = fetch_google_news_rss(query, limit=config["limit"])
+    err, items = fetch_news(query, limit=config["limit"])
     if err:
         return jsonify(err)
 
