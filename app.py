@@ -23,13 +23,104 @@ CORS(app)
 
 cache = Cache(app, config={"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300})
 
+# ---------------------------------------------------------------------------
+# Finnhub — fallback data source when Yahoo Finance rate-limits us.
+# Free tier: 60 API calls/minute, no daily cap.
+# NSE symbols on Finnhub use the format: NSE:RELIANCE, NSE:HDFCBANK etc.
+# ---------------------------------------------------------------------------
+FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "d8mrhepr01qp7ubmtnj0d8mrhepr01qp7ubmtnjg")
+FINNHUB_BASE = "https://finnhub.io/api/v1"
+
+
+def finnhub_quote(nse_symbol: str) -> dict | None:
+    """Fetch a real-time quote from Finnhub for an NSE-listed stock.
+    Returns a dict with keys: price, prev_close, change, change_pct
+    or None if the request fails.
+    """
+    try:
+        url = f"{FINNHUB_BASE}/quote"
+        resp = YF_SESSION.get(
+            url,
+            params={"symbol": f"NSE:{nse_symbol}", "token": FINNHUB_KEY},
+            timeout=8,
+        )
+        data = resp.json()
+        price = data.get("c")       # current price
+        prev = data.get("pc")       # previous close
+        if not price:
+            return None
+        change = round(price - prev, 2) if prev else None
+        change_pct = round((change / prev) * 100, 2) if prev and prev != 0 else None
+        return {
+            "price": round(price, 2),
+            "prev_close": round(prev, 2) if prev else None,
+            "change": change,
+            "change_pct": change_pct,
+        }
+    except Exception:
+        return None
+
+
+def finnhub_index_quote(finnhub_symbol: str) -> dict | None:
+    """Fetch a quote for an index (e.g. 'NIFTY 50') from Finnhub.
+    Finnhub uses symbols like '^NSEI' same as Yahoo for indices.
+    """
+    try:
+        url = f"{FINNHUB_BASE}/quote"
+        resp = YF_SESSION.get(
+            url,
+            params={"symbol": finnhub_symbol, "token": FINNHUB_KEY},
+            timeout=8,
+        )
+        data = resp.json()
+        price = data.get("c")
+        prev = data.get("pc")
+        if not price:
+            return None
+        change_pct = round(((price - prev) / prev) * 100, 2) if prev and prev != 0 else None
+        return {"price": round(price, 2), "change_pct": change_pct}
+    except Exception:
+        return None
+
+
+def finnhub_stock_profile(nse_symbol: str) -> dict | None:
+    """Fetch company profile (name, sector, market cap, logo) from Finnhub."""
+    try:
+        url = f"{FINNHUB_BASE}/stock/profile2"
+        resp = YF_SESSION.get(
+            url,
+            params={"symbol": f"NSE:{nse_symbol}", "token": FINNHUB_KEY},
+            timeout=8,
+        )
+        return resp.json() or None
+    except Exception:
+        return None
+
+
+def finnhub_basic_financials(nse_symbol: str) -> dict | None:
+    """Fetch key financial metrics from Finnhub (PE, EPS, 52w high/low etc.)."""
+    try:
+        url = f"{FINNHUB_BASE}/stock/metric"
+        resp = YF_SESSION.get(
+            url,
+            params={"symbol": f"NSE:{nse_symbol}", "metric": "all", "token": FINNHUB_KEY},
+            timeout=8,
+        )
+        data = resp.json()
+        return data.get("metric") or None
+    except Exception:
+        return None
+
+
 
 class TimeoutSession(requests.Session):
     """A requests.Session that always applies a default timeout.
 
-    Yahoo Finance occasionally hangs on slow networks; yfinance doesn't apply
-    a timeout by default, so we inject one here to keep API responses fast
-    and Flask-Caching effective.
+    Used for our OWN direct HTTP calls (e.g. Yahoo's search/quote endpoints
+    that we call manually). NOT passed to yfinance itself - newer yfinance
+    versions (0.2.5x+) require their own internal curl_cffi session for
+    Yahoo's bot-detection/cookie handling and will error if given a plain
+    requests.Session.
     """
 
     def request(self, *args, **kwargs):
@@ -42,17 +133,25 @@ YF_SESSION.headers.update({"User-Agent": "Mozilla/5.0"})
 
 
 def yf_ticker(symbol: str) -> "yf.Ticker":
-    """Create a yfinance Ticker using our timeout-protected session."""
+    """Create a yfinance Ticker, letting yfinance manage its own session."""
     return yf.Ticker(symbol)
 
+
 def get_info_with_retry(ticker, retries=2, delay=1.5):
+    """Fetch ticker.info with a couple of retries.
+
+    Yahoo's quoteSummary endpoint (used by .info) is rate-limited more
+    aggressively than the chart endpoint (used by .fast_info/.history),
+    especially from shared cloud IPs. A short retry with backoff smooths
+    over transient 429s without slowing down the normal case.
+    """
     last_err = None
     for attempt in range(retries + 1):
         try:
             info = ticker.info
             if info and (info.get("regularMarketPrice") is not None or info.get("currentPrice") is not None):
                 return info
-            last_err = info
+            last_err = info  # empty/partial response, may be a soft rate-limit
         except Exception as e:
             last_err = e
         if attempt < retries:
@@ -60,7 +159,6 @@ def get_info_with_retry(ticker, retries=2, delay=1.5):
     if isinstance(last_err, Exception):
         raise last_err
     return last_err or {}
-
 
 # ---------------------------------------------------------------------------
 # Static lookup data
@@ -304,6 +402,15 @@ TICKER_SYMBOLS = {
     "Crude Oil": "CL=F",
 }
 
+# Finnhub symbols for the ticker bar items (where available)
+FINNHUB_TICKER_MAP = {
+    "NIFTY 50": "NSE:NIFTY50",
+    "SENSEX": "BSE:SENSEX",
+    "NIFTY BANK": "NSE:BANKNIFTY",
+    "NIFTY IT": "NSE:NIFTYIT",
+    "USD/INR": "OANDA:USD_INR",
+}
+
 COMMODITY_SYMBOLS = {
     "Gold": "GC=F",
     "Silver": "SI=F",
@@ -511,7 +618,7 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
 
 
 @app.route("/api/search/<query>")
-@cache.cached(timeout=300)
+@cache.cached(timeout=120)
 def stock_autocomplete(query):
     """Live search across ALL NSE and BSE listed stocks using Yahoo Finance's
     public search/autocomplete index (no key required)."""
@@ -559,53 +666,97 @@ def stock_autocomplete(query):
 def stock_data(symbol):
     try:
         nse_symbol = resolve_symbol(symbol)
-        ticker = yf_ticker(f"{nse_symbol}.NS")
-        info = get_info_with_retry(ticker)
 
-        if not info or info.get("regularMarketPrice") is None and info.get("currentPrice") is None:
-            # try BSE
-            ticker = yf_ticker(f"{nse_symbol}.BO")
+        # ── Primary: Yahoo Finance ──────────────────────────────────────────
+        yf_ok = False
+        info = {}
+        try:
+            ticker = yf_ticker(f"{nse_symbol}.NS")
             info = get_info_with_retry(ticker)
+            if not info or (info.get("regularMarketPrice") is None and info.get("currentPrice") is None):
+                ticker = yf_ticker(f"{nse_symbol}.BO")
+                info = get_info_with_retry(ticker)
+            if info and (info.get("regularMarketPrice") is not None or info.get("currentPrice") is not None):
+                yf_ok = True
+        except Exception:
+            pass
 
-        if not info or (info.get("regularMarketPrice") is None and info.get("currentPrice") is None):
-            return jsonify({"error": f"Could not find data for '{symbol}'. Try the exact NSE symbol."})
+        if yf_ok:
+            price = info.get("currentPrice") or info.get("regularMarketPrice")
+            prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+            change = round(price - prev_close, 2) if price and prev_close else None
+            change_pct = round((change / prev_close) * 100, 2) if change and prev_close else None
+            result = {
+                "symbol": nse_symbol,
+                "exchange_symbol": f"{nse_symbol}.NS",
+                "name": info.get("longName") or info.get("shortName") or nse_symbol,
+                "sector": info.get("sector", "N/A"),
+                "industry": info.get("industry", "N/A"),
+                "price": price,
+                "change": change,
+                "change_pct": change_pct,
+                "currency": info.get("currency", "INR"),
+                "market_cap": info.get("marketCap"),
+                "market_cap_cr": fmt_crore(info.get("marketCap")),
+                "week52_high": info.get("fiftyTwoWeekHigh"),
+                "week52_low": info.get("fiftyTwoWeekLow"),
+                "pe_ratio": info.get("trailingPE"),
+                "eps": info.get("trailingEps"),
+                "revenue_cr": fmt_crore(info.get("totalRevenue")),
+                "net_profit_cr": fmt_crore(info.get("netIncomeToCommon")),
+                "debt_to_equity": info.get("debtToEquity"),
+                "roce": info.get("returnOnAssets"),
+                "roe": info.get("returnOnEquity"),
+                "promoter_holding": info.get("heldPercentInsiders"),
+                "dividend_yield": info.get("dividendYield"),
+                "logo_url": (
+                    f"https://logo.clearbit.com/{info.get('website', '').replace('https://', '').replace('http://', '').rstrip('/')}"
+                    if info.get("website") else
+                    f"https://ui-avatars.com/api/?name={requests.utils.quote(info.get('shortName', nse_symbol))}&background=2563EB&color=fff"
+                ),
+                "data_source": "Yahoo Finance",
+            }
+            return jsonify(result)
 
-        price = info.get("currentPrice") or info.get("regularMarketPrice")
-        prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
-        change = None
-        change_pct = None
-        if price is not None and prev_close:
-            change = round(price - prev_close, 2)
-            change_pct = round((change / prev_close) * 100, 2)
+        # ── Fallback: Finnhub ───────────────────────────────────────────────
+        fq = finnhub_quote(nse_symbol)
+        if not fq:
+            return jsonify({"error": f"Could not find data for '{symbol}'. Try the exact NSE symbol (e.g. RELIANCE, HDFCBANK)."})
+
+        profile = finnhub_stock_profile(nse_symbol) or {}
+        metrics = finnhub_basic_financials(nse_symbol) or {}
+
+        market_cap = metrics.get("marketCapitalization")  # Finnhub gives this in millions USD
+        market_cap_inr = int(market_cap * 1e6 * 84) if market_cap else None  # rough USD→INR
+        market_cap_cr = fmt_crore(market_cap_inr)
+
+        logo = profile.get("logo") or f"https://ui-avatars.com/api/?name={requests.utils.quote(profile.get('name', nse_symbol))}&background=2563EB&color=fff"
 
         result = {
             "symbol": nse_symbol,
-            "exchange_symbol": f"{nse_symbol}.NS",
-            "name": info.get("longName") or info.get("shortName") or nse_symbol,
-            "sector": info.get("sector", "N/A"),
-            "industry": info.get("industry", "N/A"),
-            "price": price,
-            "change": change,
-            "change_pct": change_pct,
-            "currency": info.get("currency", "INR"),
-            "market_cap": info.get("marketCap"),
-            "market_cap_cr": fmt_crore(info.get("marketCap")),
-            "week52_high": info.get("fiftyTwoWeekHigh"),
-            "week52_low": info.get("fiftyTwoWeekLow"),
-            "pe_ratio": info.get("trailingPE"),
-            "eps": info.get("trailingEps"),
-            "revenue_cr": fmt_crore(info.get("totalRevenue")),
-            "net_profit_cr": fmt_crore(info.get("netIncomeToCommon")),
-            "debt_to_equity": info.get("debtToEquity"),
-            "roce": info.get("returnOnAssets"),  # closest free proxy
-            "roe": info.get("returnOnEquity"),
-            "promoter_holding": info.get("heldPercentInsiders"),
-            "dividend_yield": info.get("dividendYield"),
-            "logo_url": (
-                f"https://logo.clearbit.com/{info.get('website', '').replace('https://', '').replace('http://', '').rstrip('/')}"
-                if info.get("website") else
-                f"https://ui-avatars.com/api/?name={requests.utils.quote(info.get('shortName', nse_symbol))}&background=2563EB&color=fff"
-            ),
+            "exchange_symbol": f"NSE:{nse_symbol}",
+            "name": profile.get("name") or nse_symbol,
+            "sector": profile.get("finnhubIndustry") or "N/A",
+            "industry": profile.get("finnhubIndustry") or "N/A",
+            "price": fq["price"],
+            "change": fq["change"],
+            "change_pct": fq["change_pct"],
+            "currency": "INR",
+            "market_cap": market_cap_inr,
+            "market_cap_cr": market_cap_cr,
+            "week52_high": metrics.get("52WeekHigh"),
+            "week52_low": metrics.get("52WeekLow"),
+            "pe_ratio": metrics.get("peBasicExclExtraTTM") or metrics.get("peTTM"),
+            "eps": metrics.get("epsBasicExclExtraItemsTTM") or metrics.get("epsTTM"),
+            "revenue_cr": None,
+            "net_profit_cr": None,
+            "debt_to_equity": metrics.get("totalDebt/totalEquityAnnual"),
+            "roce": metrics.get("roaRfy"),
+            "roe": metrics.get("roeRfy"),
+            "promoter_holding": None,
+            "dividend_yield": metrics.get("dividendYieldIndicatedAnnual"),
+            "logo_url": logo,
+            "data_source": "Finnhub",
         }
         return jsonify(result)
     except Exception as e:
@@ -619,7 +770,7 @@ def stock_news(symbol):
         nse_symbol = resolve_symbol(symbol)
         # try to get a friendlier company name
         try:
-            info = get_info_with_retry(yf_ticker(f"{nse_symbol}.NS"))
+            info = get_info_with_retry(yf_ticker(f"{nse_symbol}.NS"), retries=1)
             company_name = info.get("longName") or info.get("shortName") or nse_symbol
         except Exception:
             company_name = nse_symbol
@@ -740,25 +891,41 @@ def stock_scorecard(symbol):
 def market_ticker():
     out = {}
     for label, sym in TICKER_SYMBOLS.items():
+        price, change_pct = None, None
+        # Try Yahoo first
         try:
-            t = yf_ticker(sym)
-            fi = t.fast_info
+            fi = yf_ticker(sym).fast_info
             price = fi.get("lastPrice") or fi.get("last_price")
             prev = fi.get("previousClose") or fi.get("previous_close")
-            change_pct = None
-            if price is not None and prev:
+            if price and prev:
                 change_pct = round(((price - prev) / prev) * 100, 2)
-            out[label] = {
-                "price": round(price, 2) if price is not None else None,
-                "change_pct": change_pct,
-            }
+                price = round(price, 2)
         except Exception:
-            out[label] = {"price": None, "change_pct": None}
+            pass
+
+        # Finnhub fallback for indices/forex if Yahoo failed
+        if price is None and label in FINNHUB_TICKER_MAP:
+            try:
+                resp = YF_SESSION.get(
+                    f"{FINNHUB_BASE}/quote",
+                    params={"symbol": FINNHUB_TICKER_MAP[label], "token": FINNHUB_KEY},
+                    timeout=8,
+                )
+                fdata = resp.json()
+                fp = fdata.get("c")
+                fp_prev = fdata.get("pc")
+                if fp:
+                    price = round(fp, 2)
+                    change_pct = round(((fp - fp_prev) / fp_prev) * 100, 2) if fp_prev else None
+            except Exception:
+                pass
+
+        out[label] = {"price": price, "change_pct": change_pct}
     return jsonify(out)
 
 
 @app.route("/api/watchlist/<symbols>")
-@cache.cached(timeout=300)
+@cache.cached(timeout=120)
 def watchlist(symbols):
     """Live price + change for an arbitrary, user-supplied list of symbols
     (used by the Dashboard's 'My Watchlist' card)."""
@@ -805,50 +972,74 @@ def watchlist(symbols):
 
 
 @app.route("/api/market/overview")
-@cache.cached(timeout=300)
+@cache.cached(timeout=600)
 def market_overview():
     try:
-        # indices
+        # ── Indices ────────────────────────────────────────────────────────
+        INDEX_MAP = {
+            "NIFTY 50":    ("^NSEI",      "NSE:NIFTY50"),
+            "SENSEX":      ("^BSESN",     "BSE:SENSEX"),
+            "NIFTY BANK":  ("^NSEBANK",   "NSE:BANKNIFTY"),
+            "NIFTY MIDCAP":("^NSEMDCP50", None),
+        }
         indices = {}
-        for label, sym in {
-            "NIFTY 50": "^NSEI", "SENSEX": "^BSESN",
-            "NIFTY BANK": "^NSEBANK", "NIFTY MIDCAP": "^NSEMDCP50",
-        }.items():
+        for label, (yf_sym, fh_sym) in INDEX_MAP.items():
+            price, change_pct = None, None
             try:
-                fi = yf_ticker(sym).fast_info
+                fi = yf_ticker(yf_sym).fast_info
                 price = fi.get("lastPrice")
                 prev = fi.get("previousClose")
-                change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
-                indices[label] = {"price": round(price, 2) if price else None, "change_pct": change_pct}
+                if price and prev:
+                    change_pct = round(((price - prev) / prev) * 100, 2)
+                    price = round(price, 2)
             except Exception:
-                indices[label] = {"price": None, "change_pct": None}
+                pass
+            # Finnhub fallback
+            if price is None and fh_sym:
+                fq = finnhub_index_quote(fh_sym)
+                if fq:
+                    price, change_pct = fq["price"], fq["change_pct"]
+            indices[label] = {"price": price, "change_pct": change_pct}
 
-        # gainers / losers from Nifty 50 basket
+        # ── Gainers / Losers from Nifty 50 basket ──────────────────────────
         movers = []
-        symbols = [f"{s}.NS" for s in NIFTY50_SYMBOLS]
-        data = yf.download(symbols, period="2d", interval="1d", group_by="ticker",
-                            progress=False, threads=True)
+        yf_failed = False
+        try:
+            symbols = [f"{s}.NS" for s in NIFTY50_SYMBOLS]
+            data = yf.download(symbols, period="2d", interval="1d", group_by="ticker",
+                                progress=False, threads=True)
+            for s in NIFTY50_SYMBOLS:
+                try:
+                    df = data[f"{s}.NS"] if len(symbols) > 1 else data
+                    closes = df["Close"].dropna()
+                    if len(closes) >= 2:
+                        last, prev = closes.iloc[-1], closes.iloc[-2]
+                        pct = round(((last - prev) / prev) * 100, 2)
+                        movers.append({"symbol": s, "price": round(float(last), 2), "change_pct": pct})
+                except Exception:
+                    continue
+        except Exception:
+            yf_failed = True
 
-        for s in NIFTY50_SYMBOLS:
-            try:
-                df = data[f"{s}.NS"] if len(symbols) > 1 else data
-                closes = df["Close"].dropna()
-                if len(closes) >= 2:
-                    last, prev = closes.iloc[-1], closes.iloc[-2]
-                    pct = round(((last - prev) / prev) * 100, 2)
-                    movers.append({"symbol": s, "price": round(last, 2), "change_pct": pct})
-            except Exception:
-                continue
+        # Finnhub fallback: fetch a subset of Nifty50 stocks if Yahoo failed
+        if yf_failed or len(movers) < 5:
+            sample = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
+                      "HINDUNILVR", "ITC", "SBIN", "BAJFINANCE", "AXISBANK",
+                      "LT", "KOTAKBANK", "TITAN", "WIPRO", "ONGC",
+                      "MARUTI", "NTPC", "ULTRACEMCO", "POWERGRID", "NESTLEIND"]
+            for s in sample:
+                if any(m["symbol"] == s for m in movers):
+                    continue
+                fq = finnhub_quote(s)
+                if fq and fq["price"]:
+                    movers.append({"symbol": s, "price": fq["price"], "change_pct": fq["change_pct"] or 0})
 
-        movers_sorted = sorted(movers, key=lambda x: x["change_pct"], reverse=True)
+        movers_sorted = sorted([m for m in movers if m.get("change_pct") is not None],
+                                key=lambda x: x["change_pct"], reverse=True)
         gainers = movers_sorted[:5]
         losers = movers_sorted[-5:][::-1]
 
-        return jsonify({
-            "indices": indices,
-            "gainers": gainers,
-            "losers": losers,
-        })
+        return jsonify({"indices": indices, "gainers": gainers, "losers": losers})
     except Exception as e:
         return jsonify({"error": f"Failed to fetch market overview: {e}"})
 
@@ -1241,12 +1432,23 @@ def index():
 
 @app.route("/robots.txt")
 def robots_txt():
-    return ("User-agent: *\nAllow: /\nSitemap: https://financeiq-1sv6.onrender.com/sitemap.xml\n", 200, {"Content-Type": "text/plain"})
+    return (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Sitemap: https://financeiq-1sv6.onrender.com/sitemap.xml\n",
+        200,
+        {"Content-Type": "text/plain"},
+    )
 
 
 @app.route("/sitemap.xml")
 def sitemap_xml():
-    xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>https://financeiq-1sv6.onrender.com/</loc></url>\n</urlset>\n"
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        '  <url><loc>https://financeiq-1sv6.onrender.com/</loc></url>\n'
+        '</urlset>\n'
+    )
     return (xml, 200, {"Content-Type": "application/xml"})
 
 
