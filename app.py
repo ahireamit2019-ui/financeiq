@@ -4,6 +4,9 @@ Flask backend - all data fetched live from free APIs (yfinance, Google News RSS,
 exchangerate-api.com). AI analysis powered by Anthropic Claude (Haiku).
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import json
 import time
