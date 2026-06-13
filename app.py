@@ -511,7 +511,7 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
 
 
 @app.route("/api/search/<query>")
-@cache.cached(timeout=120)
+@cache.cached(timeout=300)
 def stock_autocomplete(query):
     """Live search across ALL NSE and BSE listed stocks using Yahoo Finance's
     public search/autocomplete index (no key required)."""
@@ -736,7 +736,7 @@ def stock_scorecard(symbol):
 
 
 @app.route("/api/market/ticker")
-@cache.cached(timeout=90)
+@cache.cached(timeout=300)
 def market_ticker():
     out = {}
     for label, sym in TICKER_SYMBOLS.items():
@@ -758,7 +758,7 @@ def market_ticker():
 
 
 @app.route("/api/watchlist/<symbols>")
-@cache.cached(timeout=120)
+@cache.cached(timeout=300)
 def watchlist(symbols):
     """Live price + change for an arbitrary, user-supplied list of symbols
     (used by the Dashboard's 'My Watchlist' card)."""
@@ -805,7 +805,7 @@ def watchlist(symbols):
 
 
 @app.route("/api/market/overview")
-@cache.cached(timeout=120)
+@cache.cached(timeout=300)
 def market_overview():
     try:
         # indices
