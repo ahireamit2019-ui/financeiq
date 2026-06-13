@@ -1239,6 +1239,17 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/robots.txt")
+def robots_txt():
+    return ("User-agent: *\nAllow: /\nSitemap: https://financeiq-1sv6.onrender.com/sitemap.xml\n", 200, {"Content-Type": "text/plain"})
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>https://financeiq-1sv6.onrender.com/</loc></url>\n</urlset>\n"
+    return (xml, 200, {"Content-Type": "application/xml"})
+
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
