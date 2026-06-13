@@ -719,7 +719,7 @@ def stock_scorecard(symbol):
 
 
 @app.route("/api/market/ticker")
-@cache.cached(timeout=60)
+@cache.cached(timeout=90)
 def market_ticker():
     out = {}
     for label, sym in TICKER_SYMBOLS.items():
