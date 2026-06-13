@@ -28,7 +28,7 @@ cache = Cache(app, config={"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT":
 # Free tier: 60 API calls/minute, no daily cap.
 # NSE symbols on Finnhub use the format: NSE:RELIANCE, NSE:HDFCBANK etc.
 # ---------------------------------------------------------------------------
-FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "d8mrhepr01qp7ubmtnj0d8mrhepr01qp7ubmtnjg")
+FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "")
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 
 
