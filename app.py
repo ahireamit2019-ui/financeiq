@@ -616,14 +616,32 @@ def call_claude_haiku(system_prompt: str, user_message: str, api_key: str, max_t
         text_parts = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
         text = "\n".join(text_parts).strip()
 
-        # Strip markdown code fences if present
+        # Strip markdown code fences if present (handles ```json ... ``` and ``` ... ```)
         if text.startswith("```"):
-            text = text.strip("`")
-            if text.startswith("json"):
-                text = text[4:]
+            # Remove opening fence + optional language tag
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            # Remove closing fence and anything after it
+            if "```" in text:
+                text = text.rsplit("```", 1)[0]
             text = text.strip()
 
-        return json.loads(text), None
+        # Some responses include trailing text/explanations after valid JSON.
+        # Use raw_decode to parse just the first complete JSON value and
+        # ignore anything that follows.
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(text)
+            return obj, None
+        except json.JSONDecodeError:
+            # Last resort: try to extract the first {...} or [...] block
+            for open_ch, close_ch in (("[", "]"), ("{", "}")):
+                start = text.find(open_ch)
+                end = text.rfind(close_ch)
+                if start != -1 and end != -1 and end > start:
+                    try:
+                        return json.loads(text[start:end + 1]), None
+                    except json.JSONDecodeError:
+                        continue
+            raise
     except json.JSONDecodeError as e:
         return None, f"Could not parse AI response: {e}"
     except Exception as e:
