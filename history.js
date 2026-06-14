@@ -68,7 +68,7 @@ async function loadHistoryChart(label, period) {
     { label: "Trend", data: trend, color: CHART_COLORS.muted, fill: false, dashed: true, tension: 0, pointRadius: 0 },
   ]);
 
-  const unitSuffix = data.unit && data.unit !== "USD" ? ` ${data.unit.replace("INR", "₹")}` : "";
+  const unitSuffix = data.unit && data.unit !== "USD" ? ` $${data.unit}` : "";
 
   if (noteEl) {
     const trendDirection = trend[trend.length - 1] >= trend[0] ? "upward ▲" : "downward ▼";

@@ -741,8 +741,6 @@ async function loadCommoditiesPage() {
  *  (e.g. "$84.88/barrel", "₹1,29,603/10g", "$5.85/bushel"). */
 function formatCommodityPrice(v) {
   if (v.display_price === null || v.display_price === undefined) return "—";
-  if (v.unit === "INR/10g") return `${formatRupee(v.display_price, 0)}<span class="commodity-unit">/10g</span>`;
-  if (v.unit === "INR/kg") return `${formatRupee(v.display_price, 0)}<span class="commodity-unit">/kg</span>`;
   const unitLabel = v.unit && v.unit !== "USD" ? v.unit : "/unit";
   return `$${formatIndian(v.display_price)}<span class="commodity-unit">${unitLabel}</span>`;
 }

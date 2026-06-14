@@ -455,6 +455,8 @@ COMMODITY_SYMBOLS = {
 # (divisor, display_unit) pair so the displayed price is in real dollars
 # with a meaningful unit label.
 COMMODITY_UNIT_INFO = {
+    "Gold": (1, "/oz"),
+    "Silver": (1, "/oz"),
     "Crude Oil (WTI)": (1, "/barrel"),
     "Crude Oil (Brent)": (1, "/barrel"),
     "Natural Gas": (1, "/MMBtu"),
@@ -1492,24 +1494,11 @@ HISTORY_SYMBOLS = {**TICKER_SYMBOLS, **COMMODITY_SYMBOLS}
 VALID_HISTORY_PERIODS = {"1d", "1y", "2y", "3y", "4y"}
 
 
-def convert_commodity_series(label: str, values: list[float], inr_rate: float | None = None) -> tuple[list[float], str]:
-    """Apply the same unit conversion used on the commodities cards
-    (cents->dollars for Wheat/Sugar, USD/oz->INR/10g for Gold, USD/oz->INR/kg
-    for Silver) so the history chart matches what's shown on the card."""
-    if label in ("Gold", "Silver"):
-        if inr_rate is None:
-            try:
-                inr_rate = yf_ticker("INR=X").fast_info.get("lastPrice")
-            except Exception:
-                inr_rate = None
-        if inr_rate:
-            if label == "Gold":
-                # USD/oz -> INR per 10g  (1 troy oz = 31.1035 g)
-                return [round((v / 31.1035) * 10 * inr_rate, 0) for v in values], "INR/10g"
-            else:
-                # USD/oz -> INR per kg (silver is conventionally quoted per kg in India)
-                return [round((v / 31.1035) * 1000 * inr_rate, 0) for v in values], "INR/kg"
-    elif label in COMMODITY_UNIT_INFO:
+def convert_commodity_series(label: str, values: list[float]) -> tuple[list[float], str]:
+    """Apply unit conversion for commodities quoted in non-obvious units
+    (e.g. cents->dollars for Wheat/Sugar) so the history chart matches
+    what's shown on the card. All commodities are displayed in USD."""
+    if label in COMMODITY_UNIT_INFO:
         divisor, unit_label = COMMODITY_UNIT_INFO[label]
         return [round(v / divisor, 2) for v in values], unit_label
     return values, "USD"
@@ -1560,11 +1549,6 @@ def price_history(label):
 @cache.cached(timeout=300)
 def commodities():
     out = {}
-    inr_rate = None
-    try:
-        inr_rate = yf_ticker("INR=X").fast_info.get("lastPrice")
-    except Exception:
-        pass
 
     for label, sym in COMMODITY_SYMBOLS.items():
         try:
@@ -1579,7 +1563,7 @@ def commodities():
             unit = "USD"
 
             if label in COMMODITY_SYMBOLS and price is not None:
-                converted_closes, unit = convert_commodity_series(label, closes, inr_rate)
+                converted_closes, unit = convert_commodity_series(label, closes)
                 display_price = converted_closes[-1] if converted_closes else None
                 closes = converted_closes
 

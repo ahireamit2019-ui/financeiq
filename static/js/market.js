@@ -712,13 +712,11 @@ async function loadCommoditiesPage() {
 
   el.innerHTML = Object.entries(data).map(([name, v], i) => {
     const canvasId = `spark-${i}`;
-    const priceDisplay = v.display_price !== null && v.display_price !== undefined
-      ? (v.unit === "INR/10g" ? formatRupee(v.display_price, 0) : `$${formatIndian(v.display_price)}`)
-      : "—";
+    const priceDisplay = formatCommodityPrice(v);
     return `
       <div class="card commodity-card commodity-clickable" data-commodity="${name}" style="cursor:pointer;">
         <div class="commodity-name">${name}</div>
-        <div class="commodity-price">${priceDisplay} <span style="font-size:0.7rem;color:var(--text-muted);">${v.unit !== "USD" ? "" : "/unit"}</span></div>
+        <div class="commodity-price">${priceDisplay}</div>
         <div class="commodity-change ${pctClass(v.change_pct)}">${arrow(v.change_pct)} ${formatPct(v.change_pct)}</div>
         <div class="spark-wrap"><canvas id="${canvasId}"></canvas></div>
         <div class="ipo-cta">Tap for latest news →</div>
@@ -739,10 +737,16 @@ async function loadCommoditiesPage() {
   });
 }
 
+/** Format a commodity's display price with its proper unit label
+ *  (e.g. "$84.88/barrel", "₹1,29,603/10g", "$5.85/bushel"). */
+function formatCommodityPrice(v) {
+  if (v.display_price === null || v.display_price === undefined) return "—";
+  const unitLabel = v.unit && v.unit !== "USD" ? v.unit : "/unit";
+  return `$${formatIndian(v.display_price)}<span class="commodity-unit">${unitLabel}</span>`;
+}
+
 async function openCommodityNewsModal(name, commodityData) {
-  const priceDisplay = commodityData && commodityData.display_price !== null && commodityData.display_price !== undefined
-    ? (commodityData.unit === "INR/10g" ? formatRupee(commodityData.display_price, 0) : `$${formatIndian(commodityData.display_price)}`)
-    : "—";
+  const priceDisplay = formatCommodityPrice(commodityData || {});
   const changeClass = pctClass(commodityData?.change_pct);
 
   const subtitle = `
@@ -790,9 +794,15 @@ async function loadMutualFundsPage() {
   }
 
   el.classList.remove("skeleton-block");
+
+  // Keep fund metadata around so the detail modal can show a header
+  // immediately while NAV history / AI profile load.
+  window.MF_LOOKUP = {};
+  data.funds.forEach((f) => { window.MF_LOOKUP[f.scheme_code] = f; });
+
   el.innerHTML = `
     <div class="table-wrap">
-      <table class="data-table mf-table">
+      <table class="data-table mf-table mf-table-clickable">
         <thead>
           <tr>
             <th>#</th>
@@ -805,7 +815,7 @@ async function loadMutualFundsPage() {
         </thead>
         <tbody>
           ${data.funds.map((f, i) => `
-            <tr>
+            <tr data-scheme-code="${f.scheme_code}">
               <td>${i + 1}</td>
               <td>
                 <div class="mf-name">${f.name || "—"}</div>
@@ -819,6 +829,98 @@ async function loadMutualFundsPage() {
         </tbody>
       </table>
     </div>
+  `;
+
+  el.querySelectorAll(".mf-table-clickable tbody tr").forEach((row) => {
+    row.addEventListener("click", () => openMutualFundDetailModal(row.dataset.schemeCode));
+  });
+}
+
+const MF_RISK_CLASS = {
+  Low: "positive", Moderate: "neutral", High: "negative", "Very High": "negative",
+};
+
+async function openMutualFundDetailModal(schemeCode) {
+  const meta = (window.MF_LOOKUP && window.MF_LOOKUP[schemeCode]) || {};
+
+  openModal(`
+    <div class="modal-title">${meta.name || "Fund details"}</div>
+    <div class="modal-subtitle">
+      ${meta.fund_house || ""} ${meta.category ? `· ${meta.category}` : ""}
+      ${meta.nav ? `· NAV ${formatRupee(meta.nav, 2)}` : ""}
+    </div>
+    <div class="history-chart-wrap" style="margin-top:14px;">
+      <canvas id="mfNavChart"></canvas>
+    </div>
+    <div id="mfNavNote" class="card-note">Loading NAV history…</div>
+    <div class="modal-section-title">About This Fund</div>
+    <div id="mfProfile" class="skeleton-block" style="min-height:160px;"></div>
+  `);
+
+  const data = await Api.getMutualFundDetail(schemeCode);
+  if (!document.getElementById("mfProfile")) return; // modal closed before response arrived
+
+  if (data.error) {
+    document.getElementById("mfProfile").innerHTML = errorBlock(data.error, () => openMutualFundDetailModal(schemeCode));
+    document.getElementById("mfNavNote").textContent = "";
+    return;
+  }
+
+  // NAV history chart with trend line
+  const navNote = document.getElementById("mfNavNote");
+  if (data.navs && data.navs.length > 1) {
+    const step = Math.max(1, Math.floor(data.dates.length / 8));
+    const labels = data.dates.map((d, i) => (i % step === 0 ? d : ""));
+    const trend = linearTrendLine(data.navs);
+
+    const first = data.navs[0];
+    const last = data.navs[data.navs.length - 1];
+    const changePct = first ? ((last - first) / first) * 100 : null;
+    const color = (changePct ?? 0) >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
+
+    buildLineChart("mfNavChart", labels, [
+      { label: "NAV", data: data.navs, color, fill: true },
+      { label: "Trend", data: trend, color: CHART_COLORS.muted, fill: false, dashed: true, tension: 0, pointRadius: 0 },
+    ]);
+
+    if (navNote) {
+      const trendDirection = trend[trend.length - 1] >= trend[0] ? "upward ▲" : "downward ▼";
+      navNote.innerHTML = `
+        ~1Y NAV change: <span class="${pctClass(changePct)}">${arrow(changePct)} ${formatPct(changePct)}</span>
+        &nbsp;·&nbsp; Trend: ${trendDirection}
+        &nbsp;·&nbsp; ${data.dates[0]} → ${data.dates[data.dates.length - 1]}
+      `;
+    }
+  } else if (navNote) {
+    navNote.textContent = "NAV history not available.";
+  }
+
+  // AI-generated educational profile
+  const profileEl = document.getElementById("mfProfile");
+  const p = data.profile;
+  if (!p) {
+    profileEl.classList.remove("skeleton-block");
+    profileEl.innerHTML = `<p class="card-note">No fund profile available right now.</p>`;
+    return;
+  }
+
+  profileEl.classList.remove("skeleton-block");
+  profileEl.innerHTML = `
+    <p>${p.about || ""}</p>
+    ${p.typical_holdings && p.typical_holdings.length ? `
+      <div class="mf-holdings-label">Typically holds:</div>
+      <ul class="mf-holdings-list">
+        ${p.typical_holdings.map((h) => `<li>${h}</li>`).join("")}
+      </ul>` : ""}
+    <div class="mf-profile-meta">
+      ${p.risk_level ? `<span class="mf-risk-badge ${MF_RISK_CLASS[p.risk_level] || "neutral"}">Risk: ${p.risk_level}</span>` : ""}
+    </div>
+    ${p.suitable_for ? `<p class="card-note"><strong>Suitable for:</strong> ${p.suitable_for}</p>` : ""}
+    <p class="card-note mf-disclaimer">
+      This is general educational information about funds of this type, generated by AI —
+      not the fund's actual current holdings. For exact portfolio composition, check the
+      fund house's monthly factsheet.
+    </p>
   `;
 }
 

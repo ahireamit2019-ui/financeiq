@@ -16,7 +16,7 @@ async function openHistoryChartModal(label, opts = {}) {
     <div class="modal-title">${label}</div>
     ${subtitle ? `<div class="modal-subtitle">${subtitle}</div>` : ""}
     <div class="history-period-toggle" id="historyPeriodToggle">
-      ${["1y", "2y", "3y", "4y"].map((p) => `<button class="period-btn ${p === "1y" ? "active" : ""}" data-period="${p}">${p.toUpperCase()}</button>`).join("")}
+      ${["1d", "1y", "2y", "3y", "4y"].map((p) => `<button class="period-btn ${p === "1d" ? "active" : ""}" data-period="${p}">${p === "1d" ? "1D" : p.toUpperCase()}</button>`).join("")}
     </div>
     <div class="history-chart-wrap">
       <canvas id="${HISTORY_CHART_CANVAS_ID}"></canvas>
@@ -33,7 +33,7 @@ async function openHistoryChartModal(label, opts = {}) {
     });
   });
 
-  loadHistoryChart(label, "1y");
+  loadHistoryChart(label, "1d");
 }
 
 async function loadHistoryChart(label, period) {
@@ -61,15 +61,48 @@ async function loadHistoryChart(label, period) {
   const step = Math.max(1, Math.floor(data.dates.length / 8));
   const labels = data.dates.map((d, i) => (i % step === 0 ? d : ""));
 
+  const trend = linearTrendLine(data.prices);
+
   buildLineChart(HISTORY_CHART_CANVAS_ID, labels, [
     { label: label, data: data.prices, color, fill: true },
+    { label: "Trend", data: trend, color: CHART_COLORS.muted, fill: false, dashed: true, tension: 0, pointRadius: 0 },
   ]);
 
+  const unitSuffix = data.unit && data.unit !== "USD" ? ` $${data.unit}` : "";
+
   if (noteEl) {
+    const trendDirection = trend[trend.length - 1] >= trend[0] ? "upward ▲" : "downward ▼";
+    const periodLabel = data.period === "1d" ? "Today's" : data.period.toUpperCase();
+    const rangeLabel = data.period === "1d"
+      ? `${data.dates[0]} – ${data.dates[data.dates.length - 1]} (IST)`
+      : `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
     noteEl.innerHTML = `
-      ${data.period.toUpperCase()} change:
+      ${periodLabel} change:
       <span class="${pctClass(changePct)}">${arrow(changePct)} ${formatPct(changePct)}</span>
-      &nbsp;·&nbsp; ${data.dates[0]} → ${data.dates[data.dates.length - 1]}
+      ${unitSuffix ? `&nbsp;·&nbsp; Unit:${unitSuffix}` : ""}
+      &nbsp;·&nbsp; Trend: ${trendDirection}
+      &nbsp;·&nbsp; ${rangeLabel}
     `;
   }
+}
+
+/** Simple least-squares linear regression — returns a straight line
+ *  of the same length as `values`, used as a visual trend overlay. */
+function linearTrendLine(values) {
+  const n = values.length;
+  if (n < 2) return values.slice();
+
+  const xMean = (n - 1) / 2;
+  const yMean = values.reduce((sum, v) => sum + v, 0) / n;
+
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (i - xMean) * (values[i] - yMean);
+    den += (i - xMean) * (i - xMean);
+  }
+  const slope = den !== 0 ? num / den : 0;
+  const intercept = yMean - slope * xMean;
+
+  return values.map((_, i) => Math.round((slope * i + intercept) * 100) / 100);
 }
