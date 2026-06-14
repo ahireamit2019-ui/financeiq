@@ -38,6 +38,7 @@ const Api = {
   getMarketOverview: () => apiGet(`/api/market/overview`),
   getWatchlist: (symbols) => apiGet(`/api/watchlist/${encodeURIComponent(symbols)}`),
   getHeatmap: () => apiGet(`/api/market/heatmap`),
+  getSectorStocks: (key) => apiGet(`/api/market/sector/${encodeURIComponent(key)}/stocks`),
   getMostActive: () => apiGet(`/api/market/active`),
 
   getInflation: () => apiGet(`/api/macro/inflation`),
@@ -51,6 +52,7 @@ const Api = {
   getCommodityNews: (name) => apiGet(`/api/commodities/${encodeURIComponent(name)}/news`),
   getIpoShowcase: () => apiGet(`/api/ipo/showcase`),
   getTopMutualFunds: () => apiGet(`/api/mutualfunds/top`),
+  getPriceHistory: (label, period) => apiGet(`/api/history/${encodeURIComponent(label)}?period=${encodeURIComponent(period || "1y")}`),
 };
 
 /* ============================================================

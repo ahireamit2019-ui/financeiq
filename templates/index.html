@@ -47,6 +47,12 @@
   </div>
 </div>
 
+<!-- ===================== DAILY FUN FACT ===================== -->
+<div class="fun-fact-bar" id="funFactBar">
+  <span class="fun-fact-icon">💡</span>
+  <span class="fun-fact-text" id="funFactText">Loading today's market fun fact…</span>
+</div>
+
 <div class="app-shell">
 
   <!-- ===================== SIDEBAR ===================== -->
@@ -216,11 +222,34 @@
     <section class="page" id="page-macro">
       <h1 class="page-title">Macro Economy</h1>
       <p class="page-subtitle">The big picture — growth, production and policy rates.</p>
+      <p class="card-note" id="macroDataSource" style="margin-bottom:14px;"></p>
 
       <div class="grid grid-3" id="macroSummary">
         <div class="card skeleton-block"></div>
         <div class="card skeleton-block"></div>
         <div class="card skeleton-block"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">What These Numbers Mean</h3>
+        <div class="grid grid-2">
+          <div class="term-explainer">
+            <h4>GDP (Gross Domestic Product)</h4>
+            <p>The total value of all goods and services produced in India over a period. Faster GDP growth generally means more jobs, higher incomes, and stronger corporate earnings — which often supports stock markets.</p>
+          </div>
+          <div class="term-explainer">
+            <h4>IIP (Index of Industrial Production)</h4>
+            <p>Measures month-on-month output from factories, mines, and power plants. Rising IIP signals healthy manufacturing demand and economic momentum; falling IIP can hint at slowing growth ahead.</p>
+          </div>
+          <div class="term-explainer">
+            <h4>RBI Repo Rate</h4>
+            <p>The interest rate at which the RBI lends to banks. Higher repo rates make loans costlier (cooling inflation but slowing growth); lower rates make borrowing cheaper and can boost spending and markets.</p>
+          </div>
+          <div class="term-explainer">
+            <h4>PMI (Purchasing Managers' Index)</h4>
+            <p>A survey-based score of business activity in manufacturing and services. Above 50 means the sector is expanding; below 50 means it's contracting — a quick pulse-check on the economy each month.</p>
+          </div>
+        </div>
       </div>
 
       <div class="grid grid-2">
@@ -244,6 +273,7 @@
     <section class="page" id="page-inflation">
       <h1 class="page-title">Inflation Tracker</h1>
       <p class="page-subtitle">How prices are changing — and what it means for your wallet.</p>
+      <p class="card-note" id="inflationDataSource" style="margin-bottom:14px;"></p>
 
       <div class="grid grid-2">
         <div class="card">
@@ -289,6 +319,36 @@
           </table>
         </div>
         <p class="card-note">A standard deduction and rebate under Section 87A may reduce your effective tax further — check the official income tax portal for your exact liability.</p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Income Tax Slabs — Old Regime (with deductions)</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Income Slab</th><th>Tax Rate</th></tr></thead>
+            <tbody>
+              <tr><td>₹0 – ₹2,50,000</td><td>Nil</td></tr>
+              <tr><td>₹2,50,001 – ₹5,00,000</td><td>5%</td></tr>
+              <tr><td>₹5,00,001 – ₹10,00,000</td><td>20%</td></tr>
+              <tr><td>Above ₹10,00,000</td><td>30%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-note">The old regime allows deductions like Section 80C, 80D, HRA and home loan interest (24b), which can lower your taxable income significantly — useful if you have large eligible investments or rent/home loan outgo.</p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Income Tax Slabs — Old Regime (Senior &amp; Super Senior Citizens)</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Age Group</th><th>Basic Exemption Limit</th><th>Above Exemption</th></tr></thead>
+            <tbody>
+              <tr><td>Senior Citizens (60–80 yrs)</td><td>₹3,00,000</td><td>5% / 20% / 30% slabs continue as above, starting from ₹3,00,000</td></tr>
+              <tr><td>Super Senior Citizens (80+ yrs)</td><td>₹5,00,000</td><td>20% from ₹5,00,001–₹10,00,000, 30% above ₹10,00,000</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-note">Senior citizens get a higher tax-free threshold under the old regime. These age-based exemptions are not available under the new regime, which uses the same slabs for everyone.</p>
       </div>
 
       <div class="card">
@@ -500,9 +560,11 @@
 
 <script src="{{ url_for('static', filename='js/api.js') }}"></script>
 <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/history.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stock.js') }}"></script>
 <script src="{{ url_for('static', filename='js/market.js') }}"></script>
 <script src="{{ url_for('static', filename='js/currency.js') }}"></script>
+<script src="{{ url_for('static', filename='js/funfacts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

@@ -304,6 +304,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadTicker();
   setInterval(loadTicker, 60000);
+  loadDailyFunFact();
 
   // dashboard is the default page
   loadedPages.add("dashboard");
