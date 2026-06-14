@@ -9,7 +9,7 @@ import json
 import time
 import requests
 import xml.etree.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 
@@ -448,6 +448,19 @@ COMMODITY_SYMBOLS = {
     "Wheat": "ZW=F",
     "Rice": "ZR=F",
     "Sugar": "SB=F",
+}
+
+# Yahoo quotes some futures in cents (not dollars) and with units that aren't
+# obvious from the raw number alone. This maps each commodity to a
+# (divisor, display_unit) pair so the displayed price is in real dollars
+# with a meaningful unit label.
+COMMODITY_UNIT_INFO = {
+    "Crude Oil (WTI)": (1, "/barrel"),
+    "Crude Oil (Brent)": (1, "/barrel"),
+    "Natural Gas": (1, "/MMBtu"),
+    "Wheat": (100, "/bushel"),   # CBOT quotes in cents/bushel
+    "Rice": (1, "/cwt"),         # already $/cwt
+    "Sugar": (100, "/lb"),       # ICE quotes in cents/lb
 }
 
 # ---------------------------------------------------------------------------
@@ -1476,7 +1489,30 @@ def macro_growth():
 # ---------------------------------------------------------------------------
 
 HISTORY_SYMBOLS = {**TICKER_SYMBOLS, **COMMODITY_SYMBOLS}
-VALID_HISTORY_PERIODS = {"1y", "2y", "3y", "4y"}
+VALID_HISTORY_PERIODS = {"1d", "1y", "2y", "3y", "4y"}
+
+
+def convert_commodity_series(label: str, values: list[float], inr_rate: float | None = None) -> tuple[list[float], str]:
+    """Apply the same unit conversion used on the commodities cards
+    (cents->dollars for Wheat/Sugar, USD/oz->INR/10g for Gold, USD/oz->INR/kg
+    for Silver) so the history chart matches what's shown on the card."""
+    if label in ("Gold", "Silver"):
+        if inr_rate is None:
+            try:
+                inr_rate = yf_ticker("INR=X").fast_info.get("lastPrice")
+            except Exception:
+                inr_rate = None
+        if inr_rate:
+            if label == "Gold":
+                # USD/oz -> INR per 10g  (1 troy oz = 31.1035 g)
+                return [round((v / 31.1035) * 10 * inr_rate, 0) for v in values], "INR/10g"
+            else:
+                # USD/oz -> INR per kg (silver is conventionally quoted per kg in India)
+                return [round((v / 31.1035) * 1000 * inr_rate, 0) for v in values], "INR/kg"
+    elif label in COMMODITY_UNIT_INFO:
+        divisor, unit_label = COMMODITY_UNIT_INFO[label]
+        return [round(v / divisor, 2) for v in values], unit_label
+    return values, "USD"
 
 
 @app.route("/api/history/<label>")
@@ -1492,18 +1528,30 @@ def price_history(label):
 
     try:
         t = yf_ticker(sym)
-        # Weekly candles for longer ranges keep the response small and fast.
-        interval = "1d" if period == "1y" else "1wk"
-        hist = t.history(period=period, interval=interval)
+        if period == "1d":
+            # Intraday candles for today's session.
+            hist = t.history(period="1d", interval="5m")
+        else:
+            # Weekly candles for longer ranges keep the response small and fast.
+            interval = "1d" if period == "1y" else "1wk"
+            hist = t.history(period=period, interval=interval)
+
         closes = hist["Close"].dropna()
 
         if closes.empty:
             return jsonify({"error": f"No historical data available for '{label}'."})
 
-        dates = [d.strftime("%Y-%m-%d") for d in closes.index]
+        if period == "1d":
+            dates = [d.strftime("%H:%M") for d in closes.index]
+        else:
+            dates = [d.strftime("%Y-%m-%d") for d in closes.index]
         prices = [round(float(v), 2) for v in closes.tolist()]
 
-        return jsonify({"label": label, "period": period, "dates": dates, "prices": prices})
+        unit = "USD"
+        if label in COMMODITY_SYMBOLS:
+            prices, unit = convert_commodity_series(label, prices)
+
+        return jsonify({"label": label, "period": period, "dates": dates, "prices": prices, "unit": unit})
     except Exception as e:
         return jsonify({"error": f"Could not fetch history for '{label}': {e}"})
 
@@ -1529,13 +1577,11 @@ def commodities():
 
             display_price = price
             unit = "USD"
-            if label == "Gold" and price and inr_rate:
-                # USD/oz -> INR per 10g  (1 troy oz = 31.1035 g)
-                display_price = round((price / 31.1035) * 10 * inr_rate, 0)
-                unit = "INR/10g"
-            elif label == "Silver" and price and inr_rate:
-                display_price = round((price / 31.1035) * 10 * inr_rate, 0)
-                unit = "INR/10g"
+
+            if label in COMMODITY_SYMBOLS and price is not None:
+                converted_closes, unit = convert_commodity_series(label, closes, inr_rate)
+                display_price = converted_closes[-1] if converted_closes else None
+                closes = converted_closes
 
             out[label] = {
                 "price": round(price, 2) if price is not None else None,
@@ -1822,6 +1868,19 @@ MUTUAL_FUND_WATCHLIST = [
     {"query": "HDFC Flexi Cap Fund", "category": "Flexi Cap"},
     {"query": "Tata Small Cap Fund", "category": "Small Cap"},
     {"query": "UTI Nifty 50 Index Fund", "category": "Index Fund"},
+    {"query": "Quant Mid Cap Fund", "category": "Mid Cap"},
+    {"query": "Edelweiss Mid Cap Fund", "category": "Mid Cap"},
+    {"query": "Bandhan Small Cap Fund", "category": "Small Cap"},
+    {"query": "ICICI Prudential Technology Fund", "category": "Sectoral - Tech"},
+    {"query": "Nippon India Pharma Fund", "category": "Sectoral - Pharma"},
+    {"query": "SBI Contra Fund", "category": "Contra"},
+    {"query": "Invesco India Mid Cap Fund", "category": "Mid Cap"},
+    {"query": "ICICI Prudential Flexicap Fund", "category": "Flexi Cap"},
+    {"query": "Franklin India Flexi Cap Fund", "category": "Flexi Cap"},
+    {"query": "Mirae Asset Midcap Fund", "category": "Mid Cap"},
+    {"query": "JM Flexicap Fund", "category": "Flexi Cap"},
+    {"query": "Bank of India Small Cap Fund", "category": "Small Cap"},
+    {"query": "HSBC Small Cap Fund", "category": "Small Cap"},
 ]
 
 
@@ -1940,19 +1999,33 @@ def mutual_funds_top():
 
     Each fund requires 2 external HTTP calls (search + NAV history). Fetched
     in parallel via a thread pool so the whole request stays well under
-    gunicorn's worker timeout even with ~15 funds tracked.
+    gunicorn's worker timeout even with ~28 funds tracked. We track more
+    funds than needed (28) since some lookups inevitably fail to resolve on
+    MFAPI, ensuring we still end up with 10 valid results.
     """
     results = []
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=14) as executor:
         futures = [executor.submit(fetch_one_fund, fund) for fund in MUTUAL_FUND_WATCHLIST]
-        for future in as_completed(futures, timeout=25):
-            try:
-                fund_result = future.result()
-            except Exception:
-                fund_result = None
-            if fund_result:
-                results.append(fund_result)
+        try:
+            for future in as_completed(futures, timeout=45):
+                try:
+                    fund_result = future.result()
+                except Exception:
+                    fund_result = None
+                if fund_result:
+                    results.append(fund_result)
+        except FuturesTimeoutError:
+            # Use whatever completed within the time budget; any
+            # still-running futures are abandoned (daemon threads).
+            for future in futures:
+                if future.done() and not future.cancelled():
+                    try:
+                        fund_result = future.result()
+                    except Exception:
+                        fund_result = None
+                    if fund_result and fund_result not in results:
+                        results.append(fund_result)
 
     # Sort by 1-year return (funds with missing 1Y data go last)
     results.sort(key=lambda r: (r["return_1y"] is None, -(r["return_1y"] or 0)))
@@ -1968,9 +2041,69 @@ def mutual_funds_top():
     })
 
 
-# ---------------------------------------------------------------------------
-# Frontend
-# ---------------------------------------------------------------------------
+@app.route("/api/mutualfunds/<int:scheme_code>/detail")
+@cache.cached(timeout=21600)
+def mutual_fund_detail(scheme_code):
+    """NAV history (for a chart) plus an AI-generated overview of what this
+    type of fund typically holds. There's no free API for a fund's actual
+    current portfolio holdings, so the "portfolio" section is general
+    educational guidance based on the fund's category/name - clearly
+    labelled as such, not real-time holdings data."""
+    history = mfapi_nav_history(scheme_code)
+    if not history:
+        return jsonify({"error": "Could not fetch fund details."})
+
+    nav_data = history.get("data") or []
+    meta = history.get("meta", {})
+
+    # nav_data is newest-first; take the last ~365 entries and reverse to
+    # chronological order for charting.
+    recent = list(reversed(nav_data[:370]))
+    dates = [d["date"] for d in recent]
+    navs = []
+    for d in recent:
+        try:
+            navs.append(float(d["nav"]))
+        except (ValueError, TypeError, KeyError):
+            navs.append(None)
+
+    result = {
+        "scheme_code": scheme_code,
+        "name": meta.get("scheme_name"),
+        "fund_house": meta.get("fund_house"),
+        "scheme_category": meta.get("scheme_category"),
+        "dates": dates,
+        "navs": navs,
+    }
+
+    api_key = get_anthropic_key()
+    if api_key:
+        system_prompt = (
+            "You are a financial educator writing for an Indian retail-investor app. "
+            "Given a mutual fund's name, fund house, and scheme category, write a brief "
+            "educational profile. Return ONLY a JSON object with these keys: "
+            "'about' (~80 words on what this type of fund typically invests in and its "
+            "general strategy, based on its name/category), "
+            "'typical_holdings' (a list of 4-6 short strings naming the KINDS of "
+            "sectors/companies such a fund typically holds, e.g. 'Large private banks', "
+            "'IT services majors' - general patterns for this category, not real-time data), "
+            "'risk_level' (one of 'Low', 'Moderate', 'High', 'Very High'), "
+            "'suitable_for' (~30 words on what kind of investor/goal this fund category suits). "
+            "Be educational and general - do not claim to know the fund's actual current "
+            "holdings. Return ONLY the JSON object, no extra text."
+        )
+        fund_context = {
+            "name": meta.get("scheme_name"),
+            "fund_house": meta.get("fund_house"),
+            "scheme_category": meta.get("scheme_category"),
+        }
+        ai_result, err = call_claude_haiku(system_prompt, json.dumps(fund_context), api_key, max_tokens=600)
+        if not err and isinstance(ai_result, dict):
+            result["profile"] = ai_result
+
+    return jsonify(result)
+
+
 
 
 @app.route("/")
