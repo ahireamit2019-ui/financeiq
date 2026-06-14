@@ -28,7 +28,7 @@ cache = Cache(app, config={"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT":
 # Free tier: 60 API calls/minute, no daily cap.
 # NSE symbols on Finnhub use the format: NSE:RELIANCE, NSE:HDFCBANK etc.
 # ---------------------------------------------------------------------------
-FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "d8mrhepr01qp7ubmtnj0d8mrhepr01qp7ubmtnjg")
+FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "")
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 
 
@@ -1527,6 +1527,162 @@ def ipo_showcase():
         return jsonify({"note": note, "ipos": [], "error": err or "Could not generate IPO data."})
 
     return jsonify({"note": note, "ipos": result})
+
+
+# ---------------------------------------------------------------------------
+# Mutual Funds — top performers
+#
+# Uses MFAPI.in (https://www.mfapi.in), a free, no-key API for Indian mutual
+# fund NAV history sourced from AMFI. We track a curated list of well-known
+# Direct-Growth schemes across categories, resolve each to its scheme code via
+# the search endpoint, pull NAV history, and compute 1-year and 3-year returns
+# ourselves (MFAPI only gives raw NAV history, not pre-computed returns).
+# ---------------------------------------------------------------------------
+
+MFAPI_BASE = "https://api.mfapi.in/mf"
+
+MUTUAL_FUND_WATCHLIST = [
+    {"query": "Parag Parikh Flexi Cap Fund", "category": "Flexi Cap"},
+    {"query": "Quant Small Cap Fund", "category": "Small Cap"},
+    {"query": "Nippon India Small Cap Fund", "category": "Small Cap"},
+    {"query": "SBI Small Cap Fund", "category": "Small Cap"},
+    {"query": "ICICI Prudential Bluechip Fund", "category": "Large Cap"},
+    {"query": "Mirae Asset Large Cap Fund", "category": "Large Cap"},
+    {"query": "HDFC Mid-Cap Opportunities Fund", "category": "Mid Cap"},
+    {"query": "Kotak Emerging Equity Fund", "category": "Mid Cap"},
+    {"query": "Axis Small Cap Fund", "category": "Small Cap"},
+    {"query": "DSP Midcap Fund", "category": "Mid Cap"},
+    {"query": "Motilal Oswal Midcap Fund", "category": "Mid Cap"},
+    {"query": "Canara Robeco Small Cap Fund", "category": "Small Cap"},
+    {"query": "HDFC Flexi Cap Fund", "category": "Flexi Cap"},
+    {"query": "Tata Small Cap Fund", "category": "Small Cap"},
+    {"query": "UTI Nifty 50 Index Fund", "category": "Index Fund"},
+]
+
+
+def mfapi_search(query: str) -> list:
+    """Search MFAPI.in for scheme name/code matches."""
+    try:
+        resp = requests.get(f"{MFAPI_BASE}/search", params={"q": query}, timeout=8)
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def pick_direct_growth_scheme(matches: list, base_query: str) -> dict | None:
+    """From search results, prefer a Direct Plan / Growth option (not IDCW)."""
+    candidates = []
+    for m in matches:
+        name = (m.get("schemeName") or "").lower()
+        if "direct" in name and "growth" in name and "idcw" not in name and "dividend" not in name:
+            candidates.append(m)
+
+    if not candidates:
+        # fall back to any growth-option scheme, even regular plan
+        for m in matches:
+            name = (m.get("schemeName") or "").lower()
+            if "growth" in name and "idcw" not in name and "dividend" not in name:
+                candidates.append(m)
+
+    if not candidates:
+        return matches[0] if matches else None
+
+    # Prefer the shortest matching name (tends to be the "plain" plan,
+    # avoiding niche variants like "- Series 2" etc.)
+    candidates.sort(key=lambda m: len(m.get("schemeName") or ""))
+    return candidates[0]
+
+
+def mfapi_nav_history(scheme_code) -> dict | None:
+    """Fetch full NAV history for a scheme code."""
+    try:
+        resp = requests.get(f"{MFAPI_BASE}/{scheme_code}", timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "SUCCESS" and data.get("data"):
+            return data
+        return None
+    except Exception:
+        return None
+
+
+def find_nav_near(nav_data: list, target_date: datetime) -> float | None:
+    """nav_data is sorted newest-first; return the first NAV on/before target_date."""
+    for entry in nav_data:
+        try:
+            entry_date = datetime.strptime(entry["date"], "%d-%m-%Y")
+        except Exception:
+            continue
+        if entry_date <= target_date:
+            try:
+                return float(entry["nav"])
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
+@app.route("/api/mutualfunds/top")
+@cache.cached(timeout=21600)
+def mutual_funds_top():
+    """Top performing direct-growth mutual funds by 1-year return."""
+    results = []
+
+    for fund in MUTUAL_FUND_WATCHLIST:
+        matches = mfapi_search(fund["query"])
+        if not matches:
+            continue
+
+        scheme = pick_direct_growth_scheme(matches, fund["query"])
+        if not scheme:
+            continue
+
+        history = mfapi_nav_history(scheme.get("schemeCode"))
+        if not history:
+            continue
+
+        nav_data = history.get("data") or []
+        if len(nav_data) < 2:
+            continue
+
+        try:
+            latest_nav = float(nav_data[0]["nav"])
+            latest_date = datetime.strptime(nav_data[0]["date"], "%d-%m-%Y")
+        except Exception:
+            continue
+
+        nav_1y = find_nav_near(nav_data, latest_date - timedelta(days=365))
+        nav_3y = find_nav_near(nav_data, latest_date - timedelta(days=3 * 365))
+
+        return_1y = round((latest_nav - nav_1y) / nav_1y * 100, 2) if nav_1y else None
+        return_3y_cagr = round((((latest_nav / nav_3y) ** (1 / 3)) - 1) * 100, 2) if nav_3y and nav_3y > 0 else None
+
+        meta = history.get("meta", {})
+
+        results.append({
+            "scheme_code": scheme.get("schemeCode"),
+            "name": meta.get("scheme_name") or scheme.get("schemeName"),
+            "fund_house": meta.get("fund_house"),
+            "category": fund["category"],
+            "nav": latest_nav,
+            "nav_date": nav_data[0]["date"],
+            "return_1y": return_1y,
+            "return_3y_cagr": return_3y_cagr,
+        })
+
+    # Sort by 1-year return (funds with missing 1Y data go last)
+    results.sort(key=lambda r: (r["return_1y"] is None, -(r["return_1y"] or 0)))
+
+    return jsonify({
+        "funds": results[:10],
+        "note": (
+            "NAV and return data sourced from AMFI via MFAPI.in (free, no key required). "
+            "Returns shown are point-to-point (1-year absolute change) and 3-year CAGR based "
+            "on Direct Growth plan NAVs. Past performance does not guarantee future returns — "
+            "verify on the fund house website or AMFI before investing."
+        ),
+    })
 
 
 # ---------------------------------------------------------------------------
