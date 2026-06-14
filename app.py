@@ -1168,12 +1168,76 @@ def most_active():
 # Macro / commodities / news endpoints
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Live macro indicators
+#
+# There's no free, no-key, real-time API for India's RBI repo rate, CPI/WPI,
+# IIP or PMI. To keep these "live" without a paid data subscription, we pull
+# recent news about each indicator and ask Claude to extract the latest
+# reported figures into structured JSON. Cached for 24h since these figures
+# only change monthly (CPI/IIP/PMI) or a few times a year (repo rate, GDP).
+# If extraction fails or no Anthropic key is configured, routes fall back to
+# the curated baseline values below.
+# ---------------------------------------------------------------------------
+
+LIVE_MACRO_SYSTEM_PROMPT = (
+    "You are extracting the latest published values of Indian macroeconomic "
+    "indicators from recent news snippets. For each field below, return the "
+    "MOST RECENTLY reported value mentioned in the snippets, or null if no "
+    "snippet clearly states it. Do not estimate or invent numbers - only use "
+    "values explicitly present in the text. Return ONLY a JSON object with "
+    "exactly these keys, no extra text:\n"
+    "{\n"
+    '  "repo_rate": number or null (RBI repo rate, percent),\n'
+    '  "repo_stance": string or null (e.g. "Neutral", "Accommodative"),\n'
+    '  "repo_change_date": string or null (e.g. "Jun 2026", when the repo rate was last changed/announced),\n'
+    '  "gdp_growth_pct": number or null (latest reported India real GDP growth rate, percent),\n'
+    '  "gdp_period": string or null (e.g. "Q1 FY27" or "FY 2025-26"),\n'
+    '  "cpi_pct": number or null (latest India CPI/retail inflation rate, percent),\n'
+    '  "cpi_month": string or null (e.g. "May 2026"),\n'
+    '  "wpi_pct": number or null (latest India WPI/wholesale inflation rate, percent),\n'
+    '  "wpi_month": string or null,\n'
+    '  "iip_pct": number or null (latest India Index of Industrial Production growth, percent),\n'
+    '  "iip_month": string or null,\n'
+    '  "pmi_manufacturing": number or null (latest India Manufacturing PMI value),\n'
+    '  "pmi_services": number or null (latest India Services PMI value),\n'
+    '  "pmi_month": string or null,\n'
+    '  "as_of": string (today\'s approximate context date based on the news, e.g. "Jun 2026")\n'
+    "}"
+)
+
+
+@cache.memoize(timeout=86400)
+def get_live_macro_indicators() -> dict:
+    """Best-effort live macro figures extracted from recent news via Claude.
+    Returns {} if unavailable (no key, no news, or extraction failure)."""
+    api_key = get_anthropic_key()
+    if not api_key:
+        return {}
+
+    err1, news1 = fetch_news("RBI repo rate monetary policy India MPC", limit=6)
+    err2, news2 = fetch_news("India CPI WPI inflation IIP industrial production GDP growth PMI", limit=8)
+
+    items = (news1 if not err1 else []) + (news2 if not err2 else [])
+    if not items:
+        return {}
+
+    context = [
+        {"title": it.get("title", ""), "description": it.get("description", ""), "published": it.get("published", "")}
+        for it in items
+    ]
+
+    result, err = call_claude_haiku(LIVE_MACRO_SYSTEM_PROMPT, json.dumps(context, default=str), api_key, max_tokens=1024)
+    if err or not isinstance(result, dict):
+        return {}
+    return result
+
 
 @app.route("/api/macro/inflation")
 @cache.cached(timeout=3600)
 def macro_inflation():
     # Curated from RBI / MOSPI published releases. Update periodically.
-    return jsonify({
+    base = {
         "cpi": {
             "latest_pct": 4.83,
             "month": "Apr 2026",
@@ -1200,13 +1264,32 @@ def macro_inflation():
             "6% raise the chance of higher loan rates."
         ),
         "source": "Curated from RBI / MoSPI public releases - verify on mospi.gov.in for the latest print",
-    })
+    }
+
+    live = get_live_macro_indicators()
+    if live:
+        if live.get("cpi_pct") is not None:
+            base["cpi"]["latest_pct"] = live["cpi_pct"]
+        if live.get("cpi_month"):
+            base["cpi"]["month"] = live["cpi_month"]
+        if live.get("wpi_pct") is not None:
+            base["wpi"]["latest_pct"] = live["wpi_pct"]
+        if live.get("wpi_month"):
+            base["wpi"]["month"] = live["wpi_month"]
+        if live.get("cpi_pct") is not None or live.get("wpi_pct") is not None:
+            base["source"] = (
+                f"Live figures extracted from recent news (as of {live.get('as_of', 'recent')}); "
+                "category breakdown and 12-month history are curated baselines - "
+                "verify on mospi.gov.in for exact prints."
+            )
+
+    return jsonify(base)
 
 
 @app.route("/api/macro/rbi")
 @cache.cached(timeout=3600)
 def macro_rbi():
-    return jsonify({
+    base = {
         "repo_rate": 6.00,
         "reverse_repo_rate": 3.35,
         "crr": 4.00,
@@ -1221,13 +1304,32 @@ def macro_rbi():
             {"date": "Feb 2026", "repo_rate": 6.00},
         ],
         "source": "Curated from RBI Monetary Policy Committee releases - verify on rbi.org.in",
-    })
+    }
+
+    live = get_live_macro_indicators()
+    if live and live.get("repo_rate") is not None:
+        new_rate = live["repo_rate"]
+        if new_rate != base["repo_rate"]:
+            base["repo_rate"] = new_rate
+            label = live.get("repo_change_date") or live.get("as_of") or "Recent"
+            # append to history if it's a new data point
+            if not base["history"] or base["history"][-1]["repo_rate"] != new_rate:
+                base["history"].append({"date": label, "repo_rate": new_rate})
+            base["last_change_date"] = label
+        if live.get("repo_stance"):
+            base["stance"] = live["repo_stance"]
+        base["source"] = (
+            f"Repo rate live-checked against recent news (as of {live.get('as_of', 'recent')}); "
+            "CRR/SLR and history are curated baselines - verify on rbi.org.in."
+        )
+
+    return jsonify(base)
 
 
 @app.route("/api/macro/growth")
 @cache.cached(timeout=3600)
 def macro_growth():
-    return jsonify({
+    base = {
         "gdp_growth_pct": 6.8,
         "gdp_quarter": "Q4 FY26",
         "iip": {
@@ -1241,7 +1343,37 @@ def macro_growth():
             "month": "May 2026",
         },
         "source": "Curated from MoSPI / S&P Global PMI public releases - verify on mospi.gov.in",
-    })
+    }
+
+    live = get_live_macro_indicators()
+    if live:
+        updated = False
+        if live.get("gdp_growth_pct") is not None:
+            base["gdp_growth_pct"] = live["gdp_growth_pct"]
+            updated = True
+        if live.get("gdp_period"):
+            base["gdp_quarter"] = live["gdp_period"]
+        if live.get("iip_pct") is not None:
+            base["iip"]["latest_pct"] = live["iip_pct"]
+            updated = True
+        if live.get("iip_month"):
+            base["iip"]["month"] = live["iip_month"]
+        if live.get("pmi_manufacturing") is not None:
+            base["pmi"]["manufacturing"] = live["pmi_manufacturing"]
+            updated = True
+        if live.get("pmi_services") is not None:
+            base["pmi"]["services"] = live["pmi_services"]
+            updated = True
+        if live.get("pmi_month"):
+            base["pmi"]["month"] = live["pmi_month"]
+
+        if updated:
+            base["source"] = (
+                f"Live figures extracted from recent news (as of {live.get('as_of', 'recent')}); "
+                "IIP 12-month history is a curated baseline - verify on mospi.gov.in."
+            )
+
+    return jsonify(base)
 
 
 # ---------------------------------------------------------------------------
