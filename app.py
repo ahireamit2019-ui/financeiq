@@ -393,6 +393,33 @@ SECTOR_INDICES = {
     "Media": "^CNXMEDIA",
 }
 
+# Broad-market indices shown alongside the sector heatmap. These have no
+# single-sector composition, so clicking them shows a representative basket
+# of constituent stocks rather than the full 150/250-stock list.
+HEATMAP_INDEX_TICKERS = {
+    "Nifty Midcap 150": "NIFTYMIDCAP150.NS",
+    "Nifty Smallcap 250": "NIFTYSMLCAP250.NS",
+}
+
+# Curated representative stocks shown when a heatmap cell is clicked.
+# "Defence" has no Yahoo sector-index ticker, so its heatmap change_pct is
+# computed as the average change of these constituents instead.
+SECTOR_STOCKS = {
+    "Auto": ["MARUTI", "TATAMOTORS", "M&M", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "ASHOKLEY", "TVSMOTOR"],
+    "Bank": ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "INDUSINDBK", "BANKBARODA", "PNB"],
+    "IT": ["TCS", "INFY", "HCLTECH", "WIPRO", "TECHM", "LTIM", "MPHASIS", "PERSISTENT"],
+    "Pharma": ["SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "LUPIN", "AUROPHARMA", "TORNTPHARM", "ZYDUSLIFE"],
+    "FMCG": ["HINDUNILVR", "ITC", "NESTLEIND", "BRITANNIA", "DABUR", "TATACONSUM", "GODREJCP", "MARICO"],
+    "Metal": ["TATASTEEL", "JSWSTEEL", "HINDALCO", "VEDL", "JINDALSTEL", "SAIL", "NMDC", "COALINDIA"],
+    "Realty": ["DLF", "GODREJPROP", "OBEROIRLTY", "PHOENIXLTD", "PRESTIGE", "BRIGADE", "SOBHA", "LODHA"],
+    "Energy": ["RELIANCE", "ONGC", "NTPC", "POWERGRID", "ADANIGREEN", "TATAPOWER", "BPCL", "IOC"],
+    "Infra": ["LT", "ADANIPORTS", "GMRINFRA", "IRB", "NBCC", "NCC", "KEC", "RVNL"],
+    "Media": ["ZEEL", "SUNTV", "PVRINOX", "NETWORK18", "DISHTV", "TIPSINDLTD", "SAREGAMA", "NAZARA"],
+    "Defence": ["HAL", "BEL", "BDL", "MAZDOCK", "COCHINSHIP", "SOLARINDS", "BEML", "DATAPATTNS"],
+    "Nifty Midcap 150": ["PERSISTENT", "FEDERALBNK", "INDHOTEL", "POLYCAB", "COFORGE", "MFSL", "ASTRAL", "SUPREMEIND", "PAGEIND", "AUBANK"],
+    "Nifty Smallcap 250": ["CAMS", "KPITTECH", "RAINBOW", "JBCHEPHARM", "CGPOWER", "ANGELONE", "GRAVITA", "SONATSOFTW", "ROUTE", "ELECON"],
+}
+
 TICKER_SYMBOLS = {
     "NIFTY 50": "^NSEI",
     "SENSEX": "^BSESN",
@@ -1126,20 +1153,86 @@ def market_overview():
         return jsonify({"error": f"Failed to fetch market overview: {e}"})
 
 
+def quote_change_pct(nse_symbol: str) -> float | None:
+    """Quick helper: today's % change for an NSE symbol via Yahoo fast_info."""
+    try:
+        fi = yf_ticker(f"{nse_symbol}.NS").fast_info
+        price = fi.get("lastPrice")
+        prev = fi.get("previousClose")
+        if price and prev:
+            return round(((price - prev) / prev) * 100, 2)
+    except Exception:
+        pass
+    return None
+
+
 @app.route("/api/market/heatmap")
 @cache.cached(timeout=300)
 def market_heatmap():
     out = []
-    for sector, sym in SECTOR_INDICES.items():
+
+    def fetch_index_sector(sector, sym):
         try:
             fi = yf_ticker(sym).fast_info
             price = fi.get("lastPrice")
             prev = fi.get("previousClose")
             change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else 0
-            out.append({"sector": sector, "change_pct": change_pct})
         except Exception:
-            out.append({"sector": sector, "change_pct": 0})
+            change_pct = 0
+        return {"sector": sector, "change_pct": change_pct, "key": sector}
+
+    def fetch_defence_sector():
+        symbols = SECTOR_STOCKS["Defence"]
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            changes = [c for c in executor.map(quote_change_pct, symbols) if c is not None]
+        avg = round(sum(changes) / len(changes), 2) if changes else 0
+        return {"sector": "Defence", "change_pct": avg, "key": "Defence"}
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(fetch_index_sector, sector, sym) for sector, sym in SECTOR_INDICES.items()]
+        futures.append(executor.submit(fetch_defence_sector))
+        for sector, sym in HEATMAP_INDEX_TICKERS.items():
+            futures.append(executor.submit(fetch_index_sector, sector, sym))
+
+        for future in as_completed(futures, timeout=20):
+            try:
+                out.append(future.result())
+            except Exception:
+                pass
+
+    # Keep a stable, sensible ordering: original sectors, then Defence, then broad indices
+    order = list(SECTOR_INDICES.keys()) + ["Defence"] + list(HEATMAP_INDEX_TICKERS.keys())
+    out.sort(key=lambda s: order.index(s["sector"]) if s["sector"] in order else 999)
+
     return jsonify({"sectors": out})
+
+
+@app.route("/api/market/sector/<key>/stocks")
+@cache.cached(timeout=300)
+def sector_stocks(key):
+    """Representative stock list with live prices for a heatmap cell."""
+    symbols = SECTOR_STOCKS.get(key)
+    if not symbols:
+        return jsonify({"error": f"Unknown sector '{key}'."})
+
+    def fetch_stock(symbol):
+        try:
+            fi = yf_ticker(f"{symbol}.NS").fast_info
+            price = fi.get("lastPrice")
+            prev = fi.get("previousClose")
+            change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
+            return {
+                "symbol": symbol,
+                "price": round(price, 2) if price is not None else None,
+                "change_pct": change_pct,
+            }
+        except Exception:
+            return {"symbol": symbol, "price": None, "change_pct": None}
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        stocks = list(executor.map(fetch_stock, symbols))
+
+    return jsonify({"sector": key, "stocks": stocks})
 
 
 @app.route("/api/market/active")

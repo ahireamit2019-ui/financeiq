@@ -38,6 +38,7 @@ const Api = {
   getMarketOverview: () => apiGet(`/api/market/overview`),
   getWatchlist: (symbols) => apiGet(`/api/watchlist/${encodeURIComponent(symbols)}`),
   getHeatmap: () => apiGet(`/api/market/heatmap`),
+  getSectorStocks: (key) => apiGet(`/api/market/sector/${encodeURIComponent(key)}/stocks`),
   getMostActive: () => apiGet(`/api/market/active`),
 
   getInflation: () => apiGet(`/api/macro/inflation`),

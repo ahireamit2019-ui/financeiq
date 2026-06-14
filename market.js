@@ -303,6 +303,7 @@ function openIpoModal(ipo) {
 const SECTOR_LABELS = {
   Auto: "Auto", Bank: "Bank", IT: "IT", Pharma: "Pharma", FMCG: "FMCG",
   Metal: "Metal", Realty: "Realty", Energy: "Energy", Infra: "Infra", Media: "Media",
+  Defence: "Defence", "Nifty Midcap 150": "Midcap 150", "Nifty Smallcap 250": "Smallcap 250",
 };
 
 async function loadHeatmap() {
@@ -321,11 +322,56 @@ async function loadHeatmap() {
     const base = pct >= 0 ? "16,185,129" : "239,68,68";
     const bg = `rgba(${base}, ${0.25 + intensity * 0.6})`;
     return `
-      <div class="heatmap-cell" style="background:${bg}">
+      <div class="heatmap-cell heatmap-clickable" style="background:${bg}" data-key="${s.key || s.sector}" data-sector="${s.sector}">
         ${SECTOR_LABELS[s.sector] || s.sector}
         <span class="pct">${formatPct(pct)}</span>
       </div>`;
   }).join("");
+
+  el.querySelectorAll(".heatmap-clickable").forEach((cell) => {
+    cell.addEventListener("click", () => openSectorStocksModal(cell.dataset.key, cell.dataset.sector));
+  });
+}
+
+async function openSectorStocksModal(key, sectorLabel) {
+  openModal(`
+    <div class="modal-title">${SECTOR_LABELS[sectorLabel] || sectorLabel}</div>
+    <div class="modal-subtitle">Representative stocks and current prices</div>
+    <div id="sectorStocksList" class="skeleton-block" style="min-height:240px;margin-top:14px;"></div>
+  `);
+
+  const data = await Api.getSectorStocks(key);
+  const listEl = document.getElementById("sectorStocksList");
+  if (!listEl) return; // modal closed before response arrived
+
+  if (data.error) {
+    listEl.innerHTML = errorBlock(data.error, () => openSectorStocksModal(key, sectorLabel));
+    return;
+  }
+
+  listEl.classList.remove("skeleton-block");
+  listEl.innerHTML = `
+    <div class="table-wrap">
+      <table class="data-table sector-stocks-table">
+        <thead><tr><th>Stock</th><th>Price</th><th>Change</th></tr></thead>
+        <tbody>
+          ${(data.stocks || []).map((s) => `
+            <tr class="stock-row-clickable" data-symbol="${s.symbol}">
+              <td>${s.symbol}</td>
+              <td>${s.price !== null ? formatRupee(s.price) : "—"}</td>
+              <td class="${pctClass(s.change_pct)}">${s.change_pct !== null ? `${arrow(s.change_pct)} ${formatPct(s.change_pct)}` : "—"}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  listEl.querySelectorAll(".stock-row-clickable").forEach((row) => {
+    row.addEventListener("click", () => {
+      closeModal();
+      searchStock(row.dataset.symbol);
+    });
+  });
 }
 
 async function loadMostActiveTable() {
@@ -378,8 +424,11 @@ async function loadMacroPage() {
     <div class="card">
       <h3 class="card-title">RBI Repo Rate</h3>
       <div class="price-now">${formatPct(rbi.repo_rate)}</div>
-      <p class="card-note">CRR: ${formatPct(rbi.crr)} · SLR: ${formatPct(rbi.slr)}</p>
+      <p class="card-note">CRR: ${formatPct(rbi.crr)} · SLR: ${formatPct(rbi.slr)} · Stance: ${rbi.stance}</p>
     </div>`;
+
+  const dataSourceEl = document.getElementById("macroDataSource");
+  if (dataSourceEl) dataSourceEl.textContent = growth.source || "";
 
   const months = ["Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May"];
   buildLineChart("iipChart", months, [
@@ -429,6 +478,11 @@ async function loadInflationPage() {
   ]);
 
   noteEl.textContent = data.impact_note;
+
+  const sourceEl = document.getElementById("inflationDataSource");
+  if (sourceEl) {
+    sourceEl.textContent = `CPI: ${formatPct(data.cpi.latest_pct)} (${data.cpi.month}) · WPI: ${formatPct(data.wpi.latest_pct)} (${data.wpi.month}) · ${data.source || ""}`;
+  }
 
   loadInflationNews();
 }
