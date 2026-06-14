@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinanceIQ — India Financial Intelligence</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ===================== TOP HEADER ===================== -->
+<header class="topbar">
+  <div class="topbar-left">
+    <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="brand">
+      <span class="brand-mark">F</span><span class="brand-name">Finance<span class="brand-accent">IQ</span></span>
+    </div>
+  </div>
+
+  <div class="topbar-search" id="topbarSearch">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="stockSearchInput" placeholder="Search a stock — e.g. Reliance, TCS, HDFC Bank…" autocomplete="off">
+    <button id="stockSearchBtn" class="search-btn">Search</button>
+    <div class="search-suggestions" id="searchSuggestions"></div>
+  </div>
+
+  <div class="topbar-right">
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ===================== LIVE TICKER ===================== -->
+<div class="ticker-bar" id="tickerBar">
+  <div class="ticker-track" id="tickerTrack">
+    <span class="ticker-item">Loading market data…</span>
+  </div>
+</div>
+
+<!-- ===================== DAILY FUN FACT ===================== -->
+<div class="fun-fact-bar" id="funFactBar">
+  <span class="fun-fact-icon">💡</span>
+  <span class="fun-fact-text" id="funFactText">Loading today's market fun fact…</span>
+</div>
+
+<div class="app-shell">
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <nav class="sidebar" id="sidebar">
+    <ul class="nav-list">
+      <li class="nav-item active" data-page="dashboard">
+        <span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span>
+      </li>
+      <li class="nav-item" data-page="stock">
+        <span class="nav-icon">🔎</span><span class="nav-label">Stock Search</span>
+      </li>
+      <li class="nav-item" data-page="market">
+        <span class="nav-icon">📊</span><span class="nav-label">Stock Market</span>
+      </li>
+      <li class="nav-item" data-page="mutualfunds">
+        <span class="nav-icon">📁</span><span class="nav-label">Mutual Funds</span>
+      </li>
+      <li class="nav-item" data-page="macro">
+        <span class="nav-icon">🌍</span><span class="nav-label">Macro Economy</span>
+      </li>
+      <li class="nav-item" data-page="inflation">
+        <span class="nav-icon">💰</span><span class="nav-label">Inflation Tracker</span>
+      </li>
+      <li class="nav-item" data-page="tax">
+        <span class="nav-icon">📋</span><span class="nav-label">Tax Updates</span>
+      </li>
+      <li class="nav-item" data-page="earnings">
+        <span class="nav-icon">📈</span><span class="nav-label">Business &amp; Earnings</span>
+      </li>
+      <li class="nav-item" data-page="geo">
+        <span class="nav-icon">🌐</span><span class="nav-label">Geopolitical Impact</span>
+      </li>
+      <li class="nav-item" data-page="commodities">
+        <span class="nav-icon">🏗️</span><span class="nav-label">Commodities</span>
+      </li>
+      <li class="nav-item" data-page="policy">
+        <span class="nav-icon">🏛️</span><span class="nav-label">Political &amp; Policy</span>
+      </li>
+      <li class="nav-item" data-page="calculator">
+        <span class="nav-icon">🧮</span><span class="nav-label">Impact Calculator</span>
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+      <p>Data via Yahoo Finance, Google News &amp; open data sources. AI by Claude Haiku.</p>
+    </div>
+  </nav>
+
+  <!-- ===================== MAIN CONTENT ===================== -->
+  <main class="content" id="content">
+
+    <!-- ---------- DASHBOARD ---------- -->
+    <section class="page active" id="page-dashboard">
+      <h1 class="page-title">Market Dashboard</h1>
+      <p class="page-subtitle">A quick snapshot of India's markets, economy and what's moving.</p>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title positive-title">Top Nifty Gainers</h3>
+          <div id="gainersList" class="mover-list skeleton-list"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title negative-title">Top Nifty Losers</h3>
+          <div id="losersList" class="mover-list skeleton-list"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+        </div>
+      </div>
+
+      <div class="grid grid-1">
+        <div class="card">
+          <h3 class="card-title">My Watchlist</h3>
+          <div id="watchlistSection" class="skeleton-block"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-3">
+        <div class="card">
+          <h3 class="card-title">India Inflation Snapshot</h3>
+          <div id="inflationSnapshot" class="skeleton-block"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">RBI Policy Rate</h3>
+          <div id="rbiSnapshot" class="skeleton-block"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Trending Stocks</h3>
+          <div id="trendingStocks" class="skeleton-block"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-1">
+        <div class="card">
+          <h3 class="card-title">Currency Converter</h3>
+          <div id="currencyConverter" class="skeleton-block" style="min-height:140px"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-1">
+        <div class="card">
+          <h3 class="card-title">FII / DII Activity (Today)</h3>
+          <div id="fiiDiiActivity" class="skeleton-block"></div>
+          <p class="card-note">Net institutional flows move the market — FII buying often lifts large caps, while heavy selling can pressure the Nifty &amp; Sensex.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- STOCK SEARCH / REPORT CARD ---------- -->
+    <section class="page" id="page-stock">
+      <h1 class="page-title">Stock Research</h1>
+      <p class="page-subtitle">Search any NSE-listed company above to get a full report card.</p>
+      <div id="stockResult"></div>
+    </section>
+
+    <!-- ---------- STOCK MARKET ---------- -->
+    <section class="page" id="page-market">
+      <h1 class="page-title">Stock Market</h1>
+      <p class="page-subtitle">Index levels, sector performance and the most actively traded stocks.</p>
+
+      <div class="grid grid-4" id="indexOverview">
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Sector Heatmap</h3>
+        <div id="sectorHeatmap" class="heatmap-grid skeleton-block"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Most Active Stocks (by Volume)</h3>
+        <div id="mostActive" class="skeleton-block"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">IPO Spotlight</h3>
+        <p class="card-note">
+          Real price bands, lot sizes, dates, and issue sizes pulled from recent news for
+          currently open or upcoming IPOs, with AI-generated company overviews and balanced
+          green/red flags. Educational reference only — verify all figures with the official
+          prospectus (RHP/DRHP) before investing.
+        </p>
+        <div id="ipoGrid" class="grid grid-3" style="margin-top:14px;">
+          <div class="card skeleton-block"></div>
+          <div class="card skeleton-block"></div>
+          <div class="card skeleton-block"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- MUTUAL FUNDS ---------- -->
+    <section class="page" id="page-mutualfunds">
+      <h1 class="page-title">Mutual Funds</h1>
+      <p class="page-subtitle">Top performing Direct Growth mutual funds across categories, ranked by 1-year return.</p>
+
+      <div class="card">
+        <h3 class="card-title">Top 10 Performing Funds</h3>
+        <p class="card-note">
+          NAV and return data sourced from AMFI via MFAPI.in (free, no key required).
+          1-year return is point-to-point absolute change; 3-year is CAGR. Past performance
+          does not guarantee future returns — verify on the fund house website or AMFI before investing.
+        </p>
+        <div id="mutualFundsTable" class="skeleton-block" style="min-height:300px;margin-top:14px;"></div>
+      </div>
+    </section>
+
+    <!-- ---------- MACRO ECONOMY ---------- -->
+    <section class="page" id="page-macro">
+      <h1 class="page-title">Macro Economy</h1>
+      <p class="page-subtitle">The big picture — growth, production and policy rates.</p>
+
+      <div class="grid grid-3" id="macroSummary">
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">What These Numbers Mean</h3>
+        <div class="grid grid-2">
+          <div class="term-explainer">
+            <h4>GDP (Gross Domestic Product)</h4>
+            <p>The total value of all goods and services produced in India over a period. Faster GDP growth generally means more jobs, higher incomes, and stronger corporate earnings — which often supports stock markets.</p>
+          </div>
+          <div class="term-explainer">
+            <h4>IIP (Index of Industrial Production)</h4>
+            <p>Measures month-on-month output from factories, mines, and power plants. Rising IIP signals healthy manufacturing demand and economic momentum; falling IIP can hint at slowing growth ahead.</p>
+          </div>
+          <div class="term-explainer">
+            <h4>RBI Repo Rate</h4>
+            <p>The interest rate at which the RBI lends to banks. Higher repo rates make loans costlier (cooling inflation but slowing growth); lower rates make borrowing cheaper and can boost spending and markets.</p>
+          </div>
+          <div class="term-explainer">
+            <h4>PMI (Purchasing Managers' Index)</h4>
+            <p>A survey-based score of business activity in manufacturing and services. Above 50 means the sector is expanding; below 50 means it's contracting — a quick pulse-check on the economy each month.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title">Industrial Production (IIP) — last 12 months</h3>
+          <canvas id="iipChart" height="220"></canvas>
+        </div>
+        <div class="card">
+          <h3 class="card-title">RBI Repo Rate — recent history</h3>
+          <canvas id="repoChart" height="220"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Macro Economy News</h3>
+        <div id="macroNews" class="skeleton-block"></div>
+      </div>
+    </section>
+
+    <!-- ---------- INFLATION TRACKER ---------- -->
+    <section class="page" id="page-inflation">
+      <h1 class="page-title">Inflation Tracker</h1>
+      <p class="page-subtitle">How prices are changing — and what it means for your wallet.</p>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title">CPI by Category</h3>
+          <canvas id="cpiCategoryChart" height="240"></canvas>
+        </div>
+        <div class="card">
+          <h3 class="card-title">CPI &amp; WPI — last 12 months</h3>
+          <canvas id="cpiWpiChart" height="240"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">What This Means For You</h3>
+        <p id="inflationImpactNote" class="card-note large"></p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Inflation News</h3>
+        <div id="inflationNews" class="skeleton-block"></div>
+      </div>
+    </section>
+
+    <!-- ---------- TAX UPDATES ---------- -->
+    <section class="page" id="page-tax">
+      <h1 class="page-title">Tax Updates</h1>
+      <p class="page-subtitle">Income tax slabs, GST changes and simple ways to save tax.</p>
+
+      <div class="card">
+        <h3 class="card-title">Income Tax Slabs — New Regime (FY 2025-26)</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Income Slab</th><th>Tax Rate</th></tr></thead>
+            <tbody>
+              <tr><td>₹0 – ₹4,00,000</td><td>Nil</td></tr>
+              <tr><td>₹4,00,001 – ₹8,00,000</td><td>5%</td></tr>
+              <tr><td>₹8,00,001 – ₹12,00,000</td><td>10%</td></tr>
+              <tr><td>₹12,00,001 – ₹16,00,000</td><td>15%</td></tr>
+              <tr><td>₹16,00,001 – ₹20,00,000</td><td>20%</td></tr>
+              <tr><td>₹20,00,001 – ₹24,00,000</td><td>25%</td></tr>
+              <tr><td>Above ₹24,00,000</td><td>30%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-note">A standard deduction and rebate under Section 87A may reduce your effective tax further — check the official income tax portal for your exact liability.</p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Income Tax Slabs — Old Regime (with deductions)</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Income Slab</th><th>Tax Rate</th></tr></thead>
+            <tbody>
+              <tr><td>₹0 – ₹2,50,000</td><td>Nil</td></tr>
+              <tr><td>₹2,50,001 – ₹5,00,000</td><td>5%</td></tr>
+              <tr><td>₹5,00,001 – ₹10,00,000</td><td>20%</td></tr>
+              <tr><td>Above ₹10,00,000</td><td>30%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-note">The old regime allows deductions like Section 80C, 80D, HRA and home loan interest (24b), which can lower your taxable income significantly — useful if you have large eligible investments or rent/home loan outgo.</p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Income Tax Slabs — Old Regime (Senior &amp; Super Senior Citizens)</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Age Group</th><th>Basic Exemption Limit</th><th>Above Exemption</th></tr></thead>
+            <tbody>
+              <tr><td>Senior Citizens (60–80 yrs)</td><td>₹3,00,000</td><td>5% / 20% / 30% slabs continue as above, starting from ₹3,00,000</td></tr>
+              <tr><td>Super Senior Citizens (80+ yrs)</td><td>₹5,00,000</td><td>20% from ₹5,00,001–₹10,00,000, 30% above ₹10,00,000</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-note">Senior citizens get a higher tax-free threshold under the old regime. These age-based exemptions are not available under the new regime, which uses the same slabs for everyone.</p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Tax Computation &amp; Savings Calculator</h3>
+        <p class="card-note">
+          Enter your annual income and your planned 80C/80D/NPS/home-loan-interest investments to see
+          your estimated tax under both regimes, and exactly where the new deductions help.
+        </p>
+        <div class="grid grid-2" style="margin-top:14px;">
+          <div class="calc-row">
+            <label for="taxSalaryInput">Annual gross salary / income (₹)</label>
+            <input type="number" id="taxSalaryInput" placeholder="e.g. 1200000" value="1200000">
+          </div>
+          <div class="calc-row">
+            <label for="taxStdDeductionNote">Standard deduction</label>
+            <input type="text" id="taxStdDeductionNote" value="₹75,000 (new) / ₹50,000 (old) — applied automatically" disabled>
+          </div>
+          <div class="calc-row">
+            <label for="tax80cInput">Section 80C investments — PPF, ELSS, EPF, life insurance (₹, max 1,50,000)</label>
+            <input type="number" id="tax80cInput" placeholder="e.g. 150000" value="0">
+          </div>
+          <div class="calc-row">
+            <label for="taxNpsInput">NPS contribution — 80CCD(1B) (₹, max 50,000)</label>
+            <input type="number" id="taxNpsInput" placeholder="e.g. 50000" value="0">
+          </div>
+          <div class="calc-row">
+            <label for="tax80dInput">Health insurance premium — 80D (₹, max 25,000 / 50,000 for senior citizens)</label>
+            <input type="number" id="tax80dInput" placeholder="e.g. 25000" value="0">
+          </div>
+          <div class="calc-row">
+            <label for="taxHomeLoanInput">Home loan interest — Section 24(b) (₹, max 2,00,000, old regime only)</label>
+            <input type="number" id="taxHomeLoanInput" placeholder="e.g. 200000" value="0">
+          </div>
+        </div>
+        <div id="taxCalcResult" class="calc-result"></div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title">Popular Tax-Saving Options</h3>
+          <ul class="bullet-list">
+            <li><strong>Section 80C</strong> — up to ₹1,50,000/yr via PPF, ELSS mutual funds, life insurance premiums, EPF.</li>
+            <li><strong>NPS (80CCD-1B)</strong> — additional ₹50,000/yr deduction for retirement savings.</li>
+            <li><strong>Health Insurance (80D)</strong> — up to ₹25,000 (₹50,000 for senior citizens) for premiums.</li>
+            <li><strong>Home Loan Interest (24b)</strong> — up to ₹2,00,000/yr on a self-occupied property.</li>
+          </ul>
+          <p class="card-note">Most 80C/80D deductions apply only under the old tax regime — compare both regimes before filing.</p>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Latest GST &amp; Budget News</h3>
+          <div id="taxNews" class="skeleton-block"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" id="taxFaqCards">
+        <div class="card faq-card">
+          <p class="faq-label">Did you know?</p>
+          <p>Under the new tax regime (FY 2025-26), income up to ₹12 lakh is effectively tax-free thanks to the Section 87A rebate.</p>
+        </div>
+        <div class="card faq-card">
+          <p class="faq-label">Did you know?</p>
+          <p>ELSS mutual funds have the shortest lock-in (3 years) among all 80C investment options.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- BUSINESS & EARNINGS ---------- -->
+    <section class="page" id="page-earnings">
+      <h1 class="page-title">Business &amp; Earnings</h1>
+      <p class="page-subtitle">What India's biggest companies reported — and what's coming up.</p>
+
+      <div class="card">
+        <h3 class="card-title">Upcoming Earnings (Next 7 Days)</h3>
+        <div id="earningsCalendar" class="skeleton-block"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Latest Business News</h3>
+        <div id="businessNews" class="skeleton-block"></div>
+      </div>
+    </section>
+
+    <!-- ---------- GEOPOLITICAL IMPACT ---------- -->
+    <section class="page" id="page-geo">
+      <h1 class="page-title">Geopolitical Impact</h1>
+      <p class="page-subtitle">Global events that move Indian markets — trade, tariffs, oil &amp; more.</p>
+      <div id="geoNews" class="skeleton-block"></div>
+    </section>
+
+    <!-- ---------- COMMODITIES ---------- -->
+    <section class="page" id="page-commodities">
+      <h1 class="page-title">Commodities</h1>
+      <p class="page-subtitle">Gold, silver, energy and agri-commodity prices with 7-day trends.</p>
+      <div class="grid grid-3" id="commoditiesGrid">
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+        <div class="card skeleton-block"></div>
+      </div>
+    </section>
+
+    <!-- ---------- POLITICAL & POLICY ---------- -->
+    <section class="page" id="page-policy">
+      <h1 class="page-title">Political &amp; Policy</h1>
+      <p class="page-subtitle">Government announcements and policy moves that affect business.</p>
+      <div id="policyNews" class="skeleton-block"></div>
+    </section>
+
+    <!-- ---------- IMPACT CALCULATOR ---------- -->
+    <section class="page" id="page-calculator">
+      <h1 class="page-title">Personal Impact Calculator</h1>
+      <p class="page-subtitle">See how big economic numbers translate into your everyday money.</p>
+
+      <div class="grid grid-1">
+        <div class="card">
+          <h3 class="card-title">Inflation Impact on Your Budget</h3>
+          <div class="calc-row">
+            <label for="incomeInput">Your monthly spend (₹)</label>
+            <input type="number" id="incomeInput" placeholder="e.g. 50000" value="50000">
+          </div>
+          <div id="inflationCalcResult" class="calc-result"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">EMI Impact of a Repo Rate Change</h3>
+          <div class="calc-row">
+            <label for="loanInput">Loan amount (₹)</label>
+            <input type="number" id="loanInput" placeholder="e.g. 3000000" value="3000000">
+          </div>
+          <div class="calc-row">
+            <label for="tenureInput">Tenure (years)</label>
+            <input type="number" id="tenureInput" placeholder="e.g. 20" value="20">
+          </div>
+          <div class="calc-row">
+            <label for="rateChangeInput">Rate change (%, use negative for a cut)</label>
+            <input type="number" id="rateChangeInput" placeholder="e.g. 0.25" value="0.25" step="0.05">
+          </div>
+          <div id="emiCalcResult" class="calc-result"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">USD/INR Impact on Petrol Price</h3>
+          <p class="card-note">A rough illustration — petrol price also depends on crude price, taxes &amp; refining margins.</p>
+          <div id="petrolCalcResult" class="calc-result"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===================== SETTINGS PANEL ===================== -->
+<div class="overlay" id="overlay"></div>
+<aside class="settings-panel" id="settingsPanel">
+  <div class="settings-header">
+    <h2>Settings</h2>
+    <button class="icon-btn" id="closeSettingsBtn" aria-label="Close">✕</button>
+  </div>
+  <div class="settings-body">
+    <div class="settings-group">
+      <label for="anthropicKeyInput">Anthropic API Key</label>
+      <input type="password" id="anthropicKeyInput" placeholder="sk-ant-…">
+      <p class="settings-hint">Used for AI scorecards &amp; geopolitical impact tags. Stored only in your browser (localStorage). Get one at <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>.</p>
+    </div>
+
+    <div class="settings-group">
+      <label for="newsApiKeyInput">NewsAPI Key (optional)</label>
+      <input type="password" id="newsApiKeyInput" placeholder="optional">
+      <p class="settings-hint">FinanceIQ uses free Google News RSS by default — this key is reserved for future enhanced news quality.</p>
+    </div>
+
+    <div class="settings-group">
+      <label>Theme</label>
+      <div class="theme-options">
+        <button class="theme-btn active" data-theme="dark">Dark</button>
+        <button class="theme-btn" data-theme="light">Light</button>
+        <button class="theme-btn" data-theme="auto">Auto</button>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <label for="watchlistInput">Default Watchlist (comma separated, up to 10)</label>
+      <input type="text" id="watchlistInput" placeholder="RELIANCE, TCS, HDFCBANK, INFY">
+    </div>
+
+    <button class="primary-btn" id="saveSettingsBtn">Save Settings</button>
+    <p class="settings-status" id="settingsStatus"></p>
+  </div>
+</aside>
+
+<!-- ===================== GENERIC MODAL (commodity news / IPO details) ===================== -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box" id="modalBox">
+    <button class="icon-btn modal-close" id="modalCloseBtn" aria-label="Close">✕</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<!-- ===================== MOBILE BOTTOM NAV ===================== -->
+<nav class="bottom-nav" id="bottomNav">
+  <button class="bottom-nav-item active" data-page="dashboard"><span>🏠</span>Home</button>
+  <button class="bottom-nav-item" data-page="stock"><span>🔎</span>Search</button>
+  <button class="bottom-nav-item" data-page="market"><span>📊</span>Market</button>
+  <button class="bottom-nav-item" data-page="commodities"><span>🏗️</span>Commodity</button>
+  <button class="bottom-nav-item" data-page="calculator"><span>🧮</span>Calc</button>
+</nav>
+
+<script src="{{ url_for('static', filename='js/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/history.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stock.js') }}"></script>
+<script src="{{ url_for('static', filename='js/market.js') }}"></script>
+<script src="{{ url_for('static', filename='js/currency.js') }}"></script>
+<script src="{{ url_for('static', filename='js/funfacts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

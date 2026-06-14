@@ -9,6 +9,7 @@ import json
 import time
 import requests
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 
@@ -1243,6 +1244,45 @@ def macro_growth():
     })
 
 
+# ---------------------------------------------------------------------------
+# Price history — used for the "tap a ticker / commodity for a chart" feature.
+# Covers both index/forex tickers (TICKER_SYMBOLS) and commodities
+# (COMMODITY_SYMBOLS), with a 1/2/3/4-year period toggle on the frontend.
+# ---------------------------------------------------------------------------
+
+HISTORY_SYMBOLS = {**TICKER_SYMBOLS, **COMMODITY_SYMBOLS}
+VALID_HISTORY_PERIODS = {"1y", "2y", "3y", "4y"}
+
+
+@app.route("/api/history/<label>")
+@cache.cached(query_string=True, timeout=3600)
+def price_history(label):
+    period = request.args.get("period", "1y")
+    if period not in VALID_HISTORY_PERIODS:
+        period = "1y"
+
+    sym = HISTORY_SYMBOLS.get(label)
+    if not sym:
+        return jsonify({"error": f"No historical data available for '{label}'."})
+
+    try:
+        t = yf_ticker(sym)
+        # Weekly candles for longer ranges keep the response small and fast.
+        interval = "1d" if period == "1y" else "1wk"
+        hist = t.history(period=period, interval=interval)
+        closes = hist["Close"].dropna()
+
+        if closes.empty:
+            return jsonify({"error": f"No historical data available for '{label}'."})
+
+        dates = [d.strftime("%Y-%m-%d") for d in closes.index]
+        prices = [round(float(v), 2) for v in closes.tolist()]
+
+        return jsonify({"label": label, "period": period, "dates": dates, "prices": prices})
+    except Exception as e:
+        return jsonify({"error": f"Could not fetch history for '{label}': {e}"})
+
+
 @app.route("/api/commodities")
 @cache.cached(timeout=300)
 def commodities():
@@ -1563,7 +1603,7 @@ MUTUAL_FUND_WATCHLIST = [
 def mfapi_search(query: str) -> list:
     """Search MFAPI.in for scheme name/code matches."""
     try:
-        resp = requests.get(f"{MFAPI_BASE}/search", params={"q": query}, timeout=8)
+        resp = requests.get(f"{MFAPI_BASE}/search", params={"q": query}, timeout=5)
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, list) else []
@@ -1598,7 +1638,7 @@ def pick_direct_growth_scheme(matches: list, base_query: str) -> dict | None:
 def mfapi_nav_history(scheme_code) -> dict | None:
     """Fetch full NAV history for a scheme code."""
     try:
-        resp = requests.get(f"{MFAPI_BASE}/{scheme_code}", timeout=10)
+        resp = requests.get(f"{MFAPI_BASE}/{scheme_code}", timeout=8)
         resp.raise_for_status()
         data = resp.json()
         if data.get("status") == "SUCCESS" and data.get("data"):
@@ -1623,53 +1663,71 @@ def find_nav_near(nav_data: list, target_date: datetime) -> float | None:
     return None
 
 
+def fetch_one_fund(fund: dict) -> dict | None:
+    """Resolve a curated fund entry to its scheme code, fetch NAV history,
+    and compute 1Y / 3Y returns. Returns None if anything is unavailable."""
+    matches = mfapi_search(fund["query"])
+    if not matches:
+        return None
+
+    scheme = pick_direct_growth_scheme(matches, fund["query"])
+    if not scheme:
+        return None
+
+    history = mfapi_nav_history(scheme.get("schemeCode"))
+    if not history:
+        return None
+
+    nav_data = history.get("data") or []
+    if len(nav_data) < 2:
+        return None
+
+    try:
+        latest_nav = float(nav_data[0]["nav"])
+        latest_date = datetime.strptime(nav_data[0]["date"], "%d-%m-%Y")
+    except Exception:
+        return None
+
+    nav_1y = find_nav_near(nav_data, latest_date - timedelta(days=365))
+    nav_3y = find_nav_near(nav_data, latest_date - timedelta(days=3 * 365))
+
+    return_1y = round((latest_nav - nav_1y) / nav_1y * 100, 2) if nav_1y else None
+    return_3y_cagr = round((((latest_nav / nav_3y) ** (1 / 3)) - 1) * 100, 2) if nav_3y and nav_3y > 0 else None
+
+    meta = history.get("meta", {})
+
+    return {
+        "scheme_code": scheme.get("schemeCode"),
+        "name": meta.get("scheme_name") or scheme.get("schemeName"),
+        "fund_house": meta.get("fund_house"),
+        "category": fund["category"],
+        "nav": latest_nav,
+        "nav_date": nav_data[0]["date"],
+        "return_1y": return_1y,
+        "return_3y_cagr": return_3y_cagr,
+    }
+
+
 @app.route("/api/mutualfunds/top")
 @cache.cached(timeout=21600)
 def mutual_funds_top():
-    """Top performing direct-growth mutual funds by 1-year return."""
+    """Top performing direct-growth mutual funds by 1-year return.
+
+    Each fund requires 2 external HTTP calls (search + NAV history). Fetched
+    in parallel via a thread pool so the whole request stays well under
+    gunicorn's worker timeout even with ~15 funds tracked.
+    """
     results = []
 
-    for fund in MUTUAL_FUND_WATCHLIST:
-        matches = mfapi_search(fund["query"])
-        if not matches:
-            continue
-
-        scheme = pick_direct_growth_scheme(matches, fund["query"])
-        if not scheme:
-            continue
-
-        history = mfapi_nav_history(scheme.get("schemeCode"))
-        if not history:
-            continue
-
-        nav_data = history.get("data") or []
-        if len(nav_data) < 2:
-            continue
-
-        try:
-            latest_nav = float(nav_data[0]["nav"])
-            latest_date = datetime.strptime(nav_data[0]["date"], "%d-%m-%Y")
-        except Exception:
-            continue
-
-        nav_1y = find_nav_near(nav_data, latest_date - timedelta(days=365))
-        nav_3y = find_nav_near(nav_data, latest_date - timedelta(days=3 * 365))
-
-        return_1y = round((latest_nav - nav_1y) / nav_1y * 100, 2) if nav_1y else None
-        return_3y_cagr = round((((latest_nav / nav_3y) ** (1 / 3)) - 1) * 100, 2) if nav_3y and nav_3y > 0 else None
-
-        meta = history.get("meta", {})
-
-        results.append({
-            "scheme_code": scheme.get("schemeCode"),
-            "name": meta.get("scheme_name") or scheme.get("schemeName"),
-            "fund_house": meta.get("fund_house"),
-            "category": fund["category"],
-            "nav": latest_nav,
-            "nav_date": nav_data[0]["date"],
-            "return_1y": return_1y,
-            "return_3y_cagr": return_3y_cagr,
-        })
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(fetch_one_fund, fund) for fund in MUTUAL_FUND_WATCHLIST]
+        for future in as_completed(futures, timeout=25):
+            try:
+                fund_result = future.result()
+            except Exception:
+                fund_result = None
+            if fund_result:
+                results.append(fund_result)
 
     # Sort by 1-year return (funds with missing 1Y data go last)
     results.sort(key=lambda r: (r["return_1y"] is None, -(r["return_1y"] or 0)))
