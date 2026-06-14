@@ -6,6 +6,7 @@
 const PAGE_LOADERS = {
   dashboard: loadDashboard,
   market: loadMarketPage,
+  mutualfunds: loadMutualFundsPage,
   macro: loadMacroPage,
   inflation: loadInflationPage,
   tax: loadTaxPage,
@@ -299,6 +300,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupTaxCalculator();
   setupModal();
   setupStockLinks();
+  setupCompareButton();
 
   loadTicker();
   setInterval(loadTicker, 60000);

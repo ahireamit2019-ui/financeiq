@@ -38,6 +38,7 @@ async function loadDashboard() {
   loadRbiSnapshot();
   loadTrendingStocks();
   loadFiiDii();
+  loadCurrencyConverter();
 }
 
 async function loadWatchlist() {
@@ -661,7 +662,7 @@ async function loadCommoditiesPage() {
         <div class="commodity-name">${name}</div>
         <div class="commodity-price">${priceDisplay} <span style="font-size:0.7rem;color:var(--text-muted);">${v.unit !== "USD" ? "" : "/unit"}</span></div>
         <div class="commodity-change ${pctClass(v.change_pct)}">${arrow(v.change_pct)} ${formatPct(v.change_pct)}</div>
-        <canvas id="${canvasId}" height="60"></canvas>
+        <div class="spark-wrap"><canvas id="${canvasId}"></canvas></div>
         <div class="ipo-cta">Tap for latest news →</div>
       </div>`;
   }).join("");
@@ -706,6 +707,59 @@ async function openCommodityNewsModal(name, commodityData) {
   }
 
   newsEl.innerHTML = renderNewsList(data.news, { limit: 5 });
+}
+
+/* ============================ MUTUAL FUNDS PAGE ============================ */
+
+async function loadMutualFundsPage() {
+  const el = document.getElementById("mutualFundsTable");
+  if (!el) return;
+
+  const data = await Api.getTopMutualFunds();
+
+  if (data.error) {
+    el.classList.remove("skeleton-block");
+    el.innerHTML = errorBlock(data.error, loadMutualFundsPage);
+    return;
+  }
+
+  if (!data.funds || data.funds.length === 0) {
+    el.classList.remove("skeleton-block");
+    el.innerHTML = `<p class="card-note">No mutual fund data available right now.</p>`;
+    return;
+  }
+
+  el.classList.remove("skeleton-block");
+  el.innerHTML = `
+    <div class="table-wrap">
+      <table class="data-table mf-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Fund Name</th>
+            <th>Category</th>
+            <th>NAV</th>
+            <th>1Y Return</th>
+            <th>3Y CAGR</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.funds.map((f, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>
+                <div class="mf-name">${f.name || "—"}</div>
+                <div class="mf-house">${f.fund_house || ""}</div>
+              </td>
+              <td>${f.category || "—"}</td>
+              <td>${f.nav ? formatRupee(f.nav, 2) : "—"}</td>
+              <td class="${pctClass(f.return_1y)}">${f.return_1y !== null && f.return_1y !== undefined ? formatPct(f.return_1y) : "—"}</td>
+              <td class="${pctClass(f.return_3y_cagr)}">${f.return_3y_cagr !== null && f.return_3y_cagr !== undefined ? formatPct(f.return_3y_cagr) : "—"}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 /* ============================ POLITICAL & POLICY PAGE ============================ */

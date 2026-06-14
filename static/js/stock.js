@@ -285,6 +285,10 @@ function renderReportCard(container, data) {
   const changeClass = pctClass(data.change_pct);
   const marketCap = data.market_cap_cr ? formatCrore(data.market_cap_cr) : "—";
 
+  // Keep a reference to the currently displayed stock so the Compare
+  // feature can pull it back in without re-fetching.
+  window.currentStockData = data;
+
   container.innerHTML = `
     <div class="card report-card">
       <div class="company-header">
@@ -304,6 +308,7 @@ function renderReportCard(container, data) {
             ${arrow(data.change_pct)} ${formatRupee(Math.abs(data.change || 0))} (${formatPct(data.change_pct)}) today
           </div>
           <div class="price-52w">52W High: ${formatRupee(data.week52_high)} &nbsp;|&nbsp; 52W Low: ${formatRupee(data.week52_low)}</div>
+          <button class="compare-btn" id="compareBtn">⇄ Compare with another stock</button>
         </div>
       </div>
     </div>
@@ -442,4 +447,155 @@ async function loadStockScorecard(symbol) {
         </div>
       </div>`;
   }
+}
+
+/* ============================ COMPARE STOCKS ============================ */
+
+/** Event delegation so the dynamically-rendered Compare button always works. */
+function setupCompareButton() {
+  document.addEventListener("click", (e) => {
+    if (e.target.id === "compareBtn") {
+      openCompareModal();
+    }
+  });
+}
+
+function openCompareModal() {
+  if (!window.currentStockData) return;
+
+  openModal(`
+    <div class="modal-title">Compare Stocks</div>
+    <div class="modal-subtitle">Comparing against <strong>${window.currentStockData.name}</strong> (${window.currentStockData.symbol})</div>
+
+    <div class="compare-search-row">
+      <input type="text" id="compareSearchInput" class="currency-input" placeholder="Search a stock to compare — e.g. TCS, Infosys..." autocomplete="off">
+      <button id="compareSearchBtn" class="search-btn">Compare</button>
+    </div>
+    <div class="search-suggestions" id="compareSuggestions" style="position:relative;"></div>
+
+    <div id="compareResult"></div>
+  `);
+
+  const input = document.getElementById("compareSearchInput");
+  const btn = document.getElementById("compareSearchBtn");
+  const suggestionsBox = document.getElementById("compareSuggestions");
+
+  let debounceTimer = null;
+
+  const runCompare = (symbol) => {
+    const q = (symbol !== undefined ? symbol : input.value).trim();
+    if (!q) return;
+    suggestionsBox.classList.remove("visible");
+    suggestionsBox.innerHTML = "";
+    loadCompareResult(q);
+  };
+
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { suggestionsBox.classList.remove("visible"); suggestionsBox.innerHTML = ""; return; }
+
+    const localMatches = STOCK_SUGGESTIONS
+      .filter((s) => s.name.toLowerCase().includes(q) || s.symbol.toLowerCase().includes(q))
+      .slice(0, 8);
+
+    if (localMatches.length) {
+      suggestionsBox.innerHTML = localMatches.map((s) => `
+        <div class="suggestion-item" data-symbol="${s.symbol}">
+          <span>${s.name}</span>
+          <span class="suggestion-symbol">${s.symbol}</span>
+        </div>`).join("");
+      suggestionsBox.classList.add("visible");
+    }
+
+    clearTimeout(debounceTimer);
+    if (q.length < 2) return;
+    debounceTimer = setTimeout(async () => {
+      const data = await Api.searchStocks(q);
+      if (data.error || !data.results) return;
+      if (input.value.trim().toLowerCase() !== q) return;
+
+      const seen = new Set();
+      const merged = [...localMatches, ...data.results]
+        .filter((s) => { if (seen.has(s.symbol)) return false; seen.add(s.symbol); return true; })
+        .slice(0, 8);
+
+      suggestionsBox.innerHTML = merged.map((s) => `
+        <div class="suggestion-item" data-symbol="${s.symbol}">
+          <span>${s.name}</span>
+          <span class="suggestion-symbol">${s.symbol}</span>
+        </div>`).join("");
+      suggestionsBox.classList.add("visible");
+    }, 300);
+  });
+
+  suggestionsBox.addEventListener("click", (e) => {
+    const item = e.target.closest(".suggestion-item");
+    if (!item) return;
+    input.value = item.dataset.symbol;
+    runCompare(item.dataset.symbol);
+  });
+
+  btn.addEventListener("click", () => runCompare());
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runCompare();
+  });
+}
+
+async function loadCompareResult(symbol) {
+  const resultEl = document.getElementById("compareResult");
+  if (!resultEl) return;
+
+  resultEl.innerHTML = `<div class="skeleton-block" style="min-height:200px;margin-top:14px;"></div>`;
+
+  const data = await Api.getStock(symbol);
+  if (!resultEl) return; // modal may have closed
+
+  if (data.error) {
+    resultEl.innerHTML = errorBlock(data.error, () => loadCompareResult(symbol));
+    return;
+  }
+
+  resultEl.innerHTML = renderCompareTable(window.currentStockData, data);
+}
+
+/** Build a side-by-side comparison table for two stock data objects. */
+function renderCompareTable(a, b) {
+  const rows = [
+    { label: "Price", get: (d) => formatRupee(d.price) },
+    { label: "Today's Change", get: (d) => `${arrow(d.change_pct)} ${formatPct(d.change_pct)}`, cls: (d) => pctClass(d.change_pct) },
+    { label: "Market Cap", get: (d) => d.market_cap_cr ? formatCrore(d.market_cap_cr) : "—" },
+    { label: "52W High", get: (d) => formatRupee(d.week52_high) },
+    { label: "52W Low", get: (d) => formatRupee(d.week52_low) },
+    { label: "P/E Ratio", get: (d) => d.pe_ratio ? formatIndian(d.pe_ratio) : "—" },
+    { label: "EPS", get: (d) => d.eps ? formatRupee(d.eps) : "—" },
+    { label: "Revenue", get: (d) => d.revenue_cr ? formatCrore(d.revenue_cr) : "—" },
+    { label: "Net Profit", get: (d) => d.net_profit_cr ? formatCrore(d.net_profit_cr) : "—" },
+    { label: "Debt/Equity", get: (d) => d.debt_to_equity ? formatIndian(d.debt_to_equity) : "—" },
+    { label: "ROE", get: (d) => d.roe ? formatPct(d.roe * 100) : "—" },
+    { label: "Promoter Holding", get: (d) => d.promoter_holding ? formatPct(d.promoter_holding * 100) : "—" },
+    { label: "Dividend Yield", get: (d) => d.dividend_yield ? formatPct(d.dividend_yield) : "—" },
+  ];
+
+  return `
+    <div class="modal-section-title">Side-by-Side Comparison</div>
+    <div class="table-wrap">
+      <table class="data-table compare-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>${a.name} <span class="compare-symbol">(${a.symbol})</span></th>
+            <th>${b.name} <span class="compare-symbol">(${b.symbol})</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((r) => `
+            <tr>
+              <td>${r.label}</td>
+              <td class="${r.cls ? r.cls(a) : ""}">${r.get(a)}</td>
+              <td class="${r.cls ? r.cls(b) : ""}">${r.get(b)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
 }

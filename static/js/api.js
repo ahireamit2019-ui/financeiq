@@ -50,6 +50,7 @@ const Api = {
   getEarningsCalendar: () => apiGet(`/api/earnings/calendar`),
   getCommodityNews: (name) => apiGet(`/api/commodities/${encodeURIComponent(name)}/news`),
   getIpoShowcase: () => apiGet(`/api/ipo/showcase`),
+  getTopMutualFunds: () => apiGet(`/api/mutualfunds/top`),
 };
 
 /* ============================================================

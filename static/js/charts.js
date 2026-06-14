@@ -112,8 +112,7 @@ function buildSparkline(canvasId, data, color) {
     },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
-      aspectRatio: 4,
+      maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
       scales: { x: { display: false }, y: { display: false } },
     },

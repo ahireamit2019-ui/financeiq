@@ -61,6 +61,9 @@
       <li class="nav-item" data-page="market">
         <span class="nav-icon">📊</span><span class="nav-label">Stock Market</span>
       </li>
+      <li class="nav-item" data-page="mutualfunds">
+        <span class="nav-icon">📁</span><span class="nav-label">Mutual Funds</span>
+      </li>
       <li class="nav-item" data-page="macro">
         <span class="nav-icon">🌍</span><span class="nav-label">Macro Economy</span>
       </li>
@@ -134,6 +137,13 @@
 
       <div class="grid grid-1">
         <div class="card">
+          <h3 class="card-title">Currency Converter</h3>
+          <div id="currencyConverter" class="skeleton-block" style="min-height:140px"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-1">
+        <div class="card">
           <h3 class="card-title">FII / DII Activity (Today)</h3>
           <div id="fiiDiiActivity" class="skeleton-block"></div>
           <p class="card-note">Net institutional flows move the market — FII buying often lifts large caps, while heavy selling can pressure the Nifty &amp; Sensex.</p>
@@ -183,6 +193,22 @@
           <div class="card skeleton-block"></div>
           <div class="card skeleton-block"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ---------- MUTUAL FUNDS ---------- -->
+    <section class="page" id="page-mutualfunds">
+      <h1 class="page-title">Mutual Funds</h1>
+      <p class="page-subtitle">Top performing Direct Growth mutual funds across categories, ranked by 1-year return.</p>
+
+      <div class="card">
+        <h3 class="card-title">Top 10 Performing Funds</h3>
+        <p class="card-note">
+          NAV and return data sourced from AMFI via MFAPI.in (free, no key required).
+          1-year return is point-to-point absolute change; 3-year is CAGR. Past performance
+          does not guarantee future returns — verify on the fund house website or AMFI before investing.
+        </p>
+        <div id="mutualFundsTable" class="skeleton-block" style="min-height:300px;margin-top:14px;"></div>
       </div>
     </section>
 
@@ -476,6 +502,7 @@
 <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stock.js') }}"></script>
 <script src="{{ url_for('static', filename='js/market.js') }}"></script>
+<script src="{{ url_for('static', filename='js/currency.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

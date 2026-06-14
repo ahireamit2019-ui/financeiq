@@ -544,6 +544,8 @@ a:hover { text-decoration: underline; }
 .commodity-name { font-weight: 600; font-size: 0.95rem; }
 .commodity-price { font-family: var(--font-data); font-size: 1.3rem; font-weight: 700; }
 .commodity-change { font-size: 0.85rem; font-weight: 600; }
+.spark-wrap { position: relative; width: 100%; height: 50px; }
+.spark-wrap canvas { position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; }
 
 /* ============================ NEWS LISTS (geo/policy/business) ============================ */
 
@@ -815,4 +817,101 @@ a:hover { text-decoration: underline; }
   .topbar { gap: 10px; padding: 0 12px; }
   .brand-name { display: none; }
   .topbar-search input { font-size: 0.85rem; }
+}
+
+/* ============================ CURRENCY CONVERTER ============================ */
+
+.currency-converter { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.currency-row {
+  display: flex; gap: 10px; align-items: center; width: 100%; max-width: 420px;
+}
+.currency-input, .currency-result {
+  flex: 1 1 auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-family: var(--font-data);
+  font-size: 1.1rem;
+  font-weight: 600;
+  outline: none;
+  transition: border-color var(--transition);
+  min-width: 0;
+}
+.currency-input:focus { border-color: var(--primary); }
+.currency-result { display: flex; align-items: center; }
+.currency-select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 8px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+  flex: 1 1 auto;
+  max-width: 60%;
+}
+.currency-swap-btn {
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  color: var(--primary-light);
+  border-radius: 50%;
+  width: 36px; height: 36px;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  margin: 4px 0;
+  transition: background var(--transition);
+}
+.currency-swap-btn:hover { background: rgba(37, 99, 235, 0.2); }
+
+@media (max-width: 480px) {
+  .currency-row { flex-direction: column; align-items: stretch; }
+  .currency-select { max-width: none; }
+}
+
+/* ============================ COMPARE STOCKS ============================ */
+
+.compare-btn {
+  margin-top: 10px;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  color: var(--primary-light);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.compare-btn:hover { background: rgba(37, 99, 235, 0.2); }
+
+.compare-search-row { display: flex; gap: 10px; margin-top: 14px; }
+.compare-search-row .currency-input { flex: 1 1 auto; }
+
+.compare-table th:nth-child(2), .compare-table th:nth-child(3),
+.compare-table td:nth-child(2), .compare-table td:nth-child(3) {
+  text-align: right;
+  font-family: var(--font-data);
+}
+.compare-symbol { color: var(--text-muted); font-size: 0.75rem; font-weight: 400; }
+
+@media (max-width: 480px) {
+  .compare-search-row { flex-direction: column; }
+}
+
+/* ============================ MUTUAL FUNDS ============================ */
+
+.mf-table td:nth-child(4), .mf-table td:nth-child(5), .mf-table td:nth-child(6),
+.mf-table th:nth-child(4), .mf-table th:nth-child(5), .mf-table th:nth-child(6) {
+  text-align: right;
+  font-family: var(--font-data);
+}
+.mf-name { font-weight: 600; }
+.mf-house { color: var(--text-muted); font-size: 0.78rem; margin-top: 2px; }
+
+@media (max-width: 768px) {
+  .mf-table { font-size: 0.8rem; }
+  .mf-table th, .mf-table td { padding: 8px 6px; }
 }
