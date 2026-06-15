@@ -166,6 +166,23 @@ def get_info_with_retry(ticker, retries=2, delay=1.5):
 # ---------------------------------------------------------------------------
 
 # Common company-name -> NSE symbol map for "smart search" auto-detection.
+# ---------------------------------------------------------------------------
+# Broad NSE company name lookup (~1,500 listed companies, built from official
+# NSE equity-list and Nifty 500 data). Used as a fallback after COMPANY_MAP
+# so searching by full/short company name works for far more stocks than the
+# ~150 hand-curated common aliases below. Keyed by lowercased company name.
+# ---------------------------------------------------------------------------
+NSE_COMPANY_NAME_MAP = {}
+try:
+    with open(os.path.join(os.path.dirname(__file__), "nse_companies.json"), encoding="utf-8") as f:
+        _nse_companies = json.load(f)
+    for _sym, _info in _nse_companies.items():
+        for _key in (_info.get("name"), _info.get("short")):
+            if _key:
+                NSE_COMPANY_NAME_MAP.setdefault(_key.strip().lower(), _sym)
+except Exception:
+    NSE_COMPANY_NAME_MAP = {}
+
 # yfinance has no reliable free search endpoint for NSE, so we keep a curated
 # map of the most commonly searched companies and fall back to trying the
 # raw input (with .NS / .BO suffixes) for anything else.
@@ -585,12 +602,23 @@ def resolve_symbol(user_input: str) -> str:
     if key in COMPANY_MAP:
         base = COMPANY_MAP[key]
     else:
-        # try partial match against company map
+        # try partial match against the curated company map
         match = None
         for name, sym in COMPANY_MAP.items():
             if key in name or name in key:
                 match = sym
                 break
+
+        if not match and key in NSE_COMPANY_NAME_MAP:
+            match = NSE_COMPANY_NAME_MAP[key]
+
+        if not match:
+            # try partial match against the broad ~1,500-company NSE name map
+            for name, sym in NSE_COMPANY_NAME_MAP.items():
+                if key in name or name in key:
+                    match = sym
+                    break
+
         base = match if match else raw.upper().replace(" ", "")
 
     base = base.replace(".NS", "").replace(".BO", "")
