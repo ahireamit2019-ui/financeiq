@@ -549,6 +549,16 @@ a:hover { text-decoration: underline; }
 .commodity-price { font-family: var(--font-data); font-size: 1.3rem; font-weight: 700; }
 .commodity-unit { font-size: 0.7rem; font-weight: 500; color: var(--text-muted); margin-left: 4px; }
 .commodity-change { font-size: 0.85rem; font-weight: 600; }
+.commodity-hilo {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.commodity-hilo strong { color: var(--text-primary); font-family: var(--font-data); }
+.hilo-low strong { color: var(--negative); }
+.hilo-high strong { color: var(--positive); }
 .spark-wrap { position: relative; width: 100%; height: 50px; }
 .spark-wrap canvas { position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; }
 
@@ -1007,3 +1017,25 @@ a:hover { text-decoration: underline; }
 }
 .sector-stocks-table .stock-row-clickable { cursor: pointer; transition: background var(--transition); }
 .sector-stocks-table .stock-row-clickable:hover { background: rgba(37, 99, 235, 0.08); }
+
+/* ============================ FINANCIALS ============================ */
+
+.financials-block { margin-bottom: 18px; }
+.financials-subtitle {
+  font-family: var(--font-data);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--primary-light);
+}
+.financials-table th, .financials-table td {
+  text-align: right;
+  font-family: var(--font-data);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.financials-table th:first-child, .financials-table td:first-child {
+  text-align: left;
+  font-family: var(--font-body);
+  white-space: normal;
+}

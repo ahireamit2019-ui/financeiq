@@ -247,15 +247,19 @@ function animateScoreBars(container) {
 }
 
 function timeAgo(dateStr) {
-  if (!dateStr) return "";
+  if (!dateStr) return "Recently";
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return dateStr;
+  if (isNaN(date.getTime())) return "Recently";
   const diffMs = Date.now() - date.getTime();
-  const diffH = Math.floor(diffMs / 3600000);
-  if (diffH < 1) return "just now";
+  if (diffMs < 0) return "Recently"; // clock skew / future-dated articles
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffH = Math.floor(diffMin / 60);
   if (diffH < 24) return `${diffH}h ago`;
   const diffD = Math.floor(diffH / 24);
-  return `${diffD}d ago`;
+  if (diffD < 30) return `${diffD}d ago`;
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 /** Main entry point — called when the user searches for a stock. */
@@ -279,6 +283,7 @@ async function searchStock(rawQuery) {
   // Fetch news, scorecard in parallel — render as they arrive
   loadStockNews(data.symbol);
   loadStockScorecard(data.symbol);
+  loadStockFinancials(data.symbol);
 }
 
 function renderReportCard(container, data) {
@@ -331,6 +336,13 @@ function renderReportCard(container, data) {
         <div class="metric-box"><div class="metric-label">ROE</div><div class="metric-value">${data.roe ? formatPct(data.roe * 100) : "—"}</div></div>
         <div class="metric-box"><div class="metric-label">Promoter Holding</div><div class="metric-value">${data.promoter_holding ? formatPct(data.promoter_holding * 100) : "—"}</div></div>
         <div class="metric-box"><div class="metric-label">Dividend Yield</div><div class="metric-value">${data.dividend_yield ? formatPct(data.dividend_yield) : "—"}</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">Financials</h3>
+      <div id="financialsSection">
+        <div class="skeleton-block" style="min-height:200px"></div>
       </div>
     </div>
 
@@ -447,6 +459,69 @@ async function loadStockScorecard(symbol) {
         </div>
       </div>`;
   }
+}
+
+/* ============================ FINANCIALS ============================ */
+
+function renderFinancialsTable(title, rows, periods, fields) {
+  if (!periods.length) {
+    return `<p class="card-note">${title}: data not available for this stock.</p>`;
+  }
+  return `
+    <div class="financials-block">
+      <h4 class="financials-subtitle">${title}</h4>
+      <div class="table-wrap">
+        <table class="data-table financials-table">
+          <thead>
+            <tr><th>(₹ Cr)</th>${periods.map((p) => `<th>${p}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${fields.map(([key, label]) => `
+              <tr>
+                <td>${label}</td>
+                ${periods.map((p) => {
+                  const row = rows.find((r) => r.period === p);
+                  const val = row ? row[key] : null;
+                  return `<td>${val !== null && val !== undefined ? formatCrore(val) : "—"}</td>`;
+                }).join("")}
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function loadStockFinancials(symbol) {
+  const section = document.getElementById("financialsSection");
+  if (!section) return;
+
+  const data = await Api.getStockFinancials(symbol);
+
+  if (data.error) {
+    section.innerHTML = `<p class="card-note">${data.error}</p>`;
+    return;
+  }
+
+  const qPeriods = (data.quarterly_pnl || []).map((r) => r.period);
+  const bsPeriods = (data.balance_sheet || []).map((r) => r.period);
+
+  section.innerHTML = `
+    ${renderFinancialsTable("Quarterly Profit &amp; Loss", data.quarterly_pnl || [], qPeriods, [
+      ["revenue_cr", "Revenue"],
+      ["operating_profit_cr", "Operating Profit"],
+      ["ebitda_cr", "EBITDA"],
+      ["net_profit_cr", "Net Profit"],
+    ])}
+    ${renderFinancialsTable("Balance Sheet (Annual)", data.balance_sheet || [], bsPeriods, [
+      ["total_assets_cr", "Total Assets"],
+      ["total_liabilities_cr", "Total Liabilities"],
+      ["total_equity_cr", "Shareholders' Equity"],
+      ["total_debt_cr", "Total Debt"],
+      ["cash_cr", "Cash &amp; Equivalents"],
+    ])}
+    ${data.note ? `<p class="card-note">${data.note}</p>` : ""}
+  `;
 }
 
 /* ============================ COMPARE STOCKS ============================ */

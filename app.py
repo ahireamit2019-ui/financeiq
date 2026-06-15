@@ -544,6 +544,10 @@ INDEX_OVERVIEW_STOCK_KEY = {
     "NIFTY MIDCAP": "Nifty Midcap",
 }
 
+# Every stock available for the "52-Week High/Low" scanner: the union of
+# NIFTY 50 and every sector-stocks basket used around the site.
+ALL_WEBSITE_STOCKS = sorted(set(NIFTY50_SYMBOLS) | {s for stocks in SECTOR_STOCKS.values() for s in stocks})
+
 TICKER_SYMBOLS = {
     "NIFTY 50": "^NSEI",
     "SENSEX": "^BSESN",
@@ -842,9 +846,13 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
     system_prompt = (
         "You are a financial news writer for an Indian retail-investor app. "
         f"For each headline below, write a short ORIGINAL news brief of "
-        f"approximately {word_count} words in your own words, explaining what the "
-        "story is likely about and why it matters for Indian markets or "
-        "everyday investors, in plain English for a non-expert reader. "
+        f"approximately {word_count} words in your own words. Even within "
+        f"this {word_count}-word limit, cover the key facts (what happened, "
+        "who/what is involved, and the headline number or outcome if any) "
+        "AND why it matters for Indian markets or everyday investors - the "
+        "reader should come away with the full gist of the story, not just "
+        "a teaser. Write in plain English for a non-expert reader, in dense, "
+        "information-rich sentences with no filler or repetition. "
         "Do not quote or closely paraphrase any specific article - write a "
         "general explainer based on the headline and topic. "
         + (f"Context: these headlines relate to {topic_hint}. " if topic_hint else "")
@@ -1081,6 +1089,97 @@ def corporate_actions(symbol):
         return jsonify({"symbol": nse_symbol, "dividends": dividends, "splits": splits})
     except Exception as e:
         return jsonify({"error": f"Failed to fetch corporate actions: {e}"})
+
+
+def _df_row(df, *names):
+    """Find the first matching row (by any of `names`) in a yfinance
+    financial-statement DataFrame and return it as a {period_str: value} dict,
+    or {} if none of the names are present."""
+    if df is None or df.empty:
+        return {}
+    for name in names:
+        if name in df.index:
+            row = df.loc[name]
+            out = {}
+            for col, val in row.items():
+                try:
+                    out[col.strftime("%b %Y")] = None if val is None or (isinstance(val, float) and val != val) else round(float(val) / 1e7, 2)
+                except Exception:
+                    continue
+            return out
+    return {}
+
+
+@app.route("/api/stock/<symbol>/financials")
+@cache.cached(timeout=21600)
+def stock_financials(symbol):
+    """Quarterly P&L (as many recent quarters as Yahoo provides - typically
+    up to ~5) and annual balance sheet (typically up to ~4 years). Yahoo's
+    free data doesn't guarantee a fixed history length, so we return
+    whatever is available rather than a fixed 3y/5y window, and the
+    frontend labels columns by actual period end-dates."""
+    try:
+        nse_symbol = resolve_symbol(symbol)
+        ticker = yf_ticker(f"{nse_symbol}.NS")
+
+        try:
+            qf = ticker.quarterly_income_stmt
+        except Exception:
+            qf = None
+        try:
+            bs = ticker.balance_sheet
+        except Exception:
+            bs = None
+
+        revenue = _df_row(qf, "Total Revenue", "Operating Revenue")
+        net_profit = _df_row(qf, "Net Income", "Net Income Common Stockholders")
+        operating_profit = _df_row(qf, "Operating Income", "EBIT")
+        ebitda = _df_row(qf, "EBITDA", "Normalized EBITDA")
+
+        periods = list(revenue.keys()) or list(net_profit.keys())
+        quarterly_pnl = []
+        for p in periods:
+            quarterly_pnl.append({
+                "period": p,
+                "revenue_cr": revenue.get(p),
+                "operating_profit_cr": operating_profit.get(p),
+                "ebitda_cr": ebitda.get(p),
+                "net_profit_cr": net_profit.get(p),
+            })
+
+        total_assets = _df_row(bs, "Total Assets")
+        total_liabilities = _df_row(bs, "Total Liabilities Net Minority Interest", "Total Liab")
+        total_equity = _df_row(bs, "Stockholders Equity", "Total Equity Gross Minority Interest")
+        total_debt = _df_row(bs, "Total Debt")
+        cash = _df_row(bs, "Cash And Cash Equivalents", "Cash")
+
+        bs_periods = list(total_assets.keys()) or list(total_equity.keys())
+        balance_sheet = []
+        for p in bs_periods:
+            balance_sheet.append({
+                "period": p,
+                "total_assets_cr": total_assets.get(p),
+                "total_liabilities_cr": total_liabilities.get(p),
+                "total_equity_cr": total_equity.get(p),
+                "total_debt_cr": total_debt.get(p),
+                "cash_cr": cash.get(p),
+            })
+
+        if not quarterly_pnl and not balance_sheet:
+            return jsonify({"error": f"Financial statements not available for '{nse_symbol}'."})
+
+        return jsonify({
+            "symbol": nse_symbol,
+            "quarterly_pnl": quarterly_pnl,
+            "balance_sheet": balance_sheet,
+            "note": (
+                "Figures in ₹ crore. Showing all periods available from Yahoo Finance "
+                "(typically the most recent 4-5 quarters for P&L and 4 years for the "
+                "balance sheet) - exact history length varies by company."
+            ),
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch financial statements: {e}"})
 
 
 @app.route("/api/stock/<symbol>/scorecard")
@@ -1381,6 +1480,82 @@ def sector_stocks(key):
         stocks = list(executor.map(fetch_stock, symbols))
 
     return jsonify({"sector": key, "stocks": stocks})
+
+
+GLOBAL_INDICES = {
+    "Dow Jones": "^DJI",
+    "S&P 500": "^GSPC",
+    "Nasdaq": "^IXIC",
+    "FTSE 100": "^FTSE",
+    "Nikkei 225": "^N225",
+    "Hang Seng": "^HSI",
+    "Shanghai Composite": "000001.SS",
+}
+
+
+@app.route("/api/market/global")
+@cache.cached(timeout=600)
+def market_global():
+    """Snapshot of major global indices for cross-market context."""
+    out = {}
+
+    def fetch_index(label, sym):
+        try:
+            fi = yf_ticker(sym).fast_info
+            price = fi.get("lastPrice")
+            prev = fi.get("previousClose")
+            change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
+            return label, {"price": round(price, 2) if price is not None else None, "change_pct": change_pct}
+        except Exception:
+            return label, {"price": None, "change_pct": None}
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for label, val in executor.map(lambda kv: fetch_index(*kv), GLOBAL_INDICES.items()):
+            out[label] = val
+
+    return jsonify(out)
+
+
+
+@app.route("/api/market/52week")
+@cache.cached(timeout=1800)
+def market_52week():
+    """Scan every stock available on the site and rank by proximity to its
+    52-week high and low. Returns the top 5 closest to each extreme, plus
+    the full ranked list (for the "show all" view)."""
+
+    def fetch_stock(symbol):
+        try:
+            fi = yf_ticker(f"{symbol}.NS").fast_info
+            price = fi.get("lastPrice")
+            year_high = fi.get("yearHigh")
+            year_low = fi.get("yearLow")
+            if not price or not year_high or not year_low:
+                return None
+            pct_from_high = round((price - year_high) / year_high * 100, 2)
+            pct_from_low = round((price - year_low) / year_low * 100, 2)
+            return {
+                "symbol": symbol,
+                "price": round(price, 2),
+                "year_high": round(year_high, 2),
+                "year_low": round(year_low, 2),
+                "pct_from_high": pct_from_high,
+                "pct_from_low": pct_from_low,
+            }
+        except Exception:
+            return None
+
+    results = []
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        for r in executor.map(fetch_stock, ALL_WEBSITE_STOCKS):
+            if r:
+                results.append(r)
+
+    near_high = sorted(results, key=lambda r: r["pct_from_high"], reverse=True)[:5]
+    near_low = sorted(results, key=lambda r: r["pct_from_low"])[:5]
+    all_sorted = sorted(results, key=lambda r: r["pct_from_high"], reverse=True)
+
+    return jsonify({"near_high": near_high, "near_low": near_low, "all": all_sorted})
 
 
 @app.route("/api/market/active")
@@ -1692,6 +1867,19 @@ def commodities():
             prev = closes[-2] if len(closes) > 1 else None
             change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
 
+            # Day high/low from today's intraday candles
+            day_high, day_low = None, None
+            try:
+                intraday = t.history(period="1d", interval="5m")
+                hi = intraday["High"].dropna()
+                lo = intraday["Low"].dropna()
+                if not hi.empty:
+                    day_high = float(hi.max())
+                if not lo.empty:
+                    day_low = float(lo.min())
+            except Exception:
+                pass
+
             display_price = price
             unit = "USD"
 
@@ -1700,15 +1888,22 @@ def commodities():
                 display_price = converted_closes[-1] if converted_closes else None
                 closes = converted_closes
 
+                if day_high is not None:
+                    day_high = convert_commodity_series(label, [day_high])[0][0]
+                if day_low is not None:
+                    day_low = convert_commodity_series(label, [day_low])[0][0]
+
             out[label] = {
                 "price": round(price, 2) if price is not None else None,
                 "display_price": display_price,
+                "day_high": day_high,
+                "day_low": day_low,
                 "unit": unit,
                 "change_pct": change_pct,
                 "sparkline": [round(c, 2) for c in closes],
             }
         except Exception:
-            out[label] = {"price": None, "display_price": None, "unit": "USD", "change_pct": None, "sparkline": []}
+            out[label] = {"price": None, "display_price": None, "day_high": None, "day_low": None, "unit": "USD", "change_pct": None, "sparkline": []}
 
     return jsonify(out)
 
@@ -1784,13 +1979,13 @@ NEWS_CATEGORY_TOPIC_HINTS = {
 # Per-category: how many stories to fetch, and roughly how many words each
 # AI-generated brief should be.
 NEWS_CATEGORY_CONFIG = {
-    "geo": {"limit": 20, "words": 150},
-    "policy": {"limit": 10, "words": 150},
-    "business": {"limit": 20, "words": 150},
-    "tax": {"limit": 10, "words": 150},
-    "market": {"limit": 8, "words": 150},
-    "inflation": {"limit": 10, "words": 150},
-    "macro": {"limit": 10, "words": 150},
+    "geo": {"limit": 20, "words": 100},
+    "policy": {"limit": 10, "words": 100},
+    "business": {"limit": 20, "words": 100},
+    "tax": {"limit": 10, "words": 100},
+    "market": {"limit": 8, "words": 100},
+    "inflation": {"limit": 10, "words": 100},
+    "macro": {"limit": 10, "words": 100},
 }
 
 

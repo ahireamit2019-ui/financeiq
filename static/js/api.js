@@ -32,6 +32,7 @@ const Api = {
   getStock: (symbol) => apiGet(`/api/stock/${encodeURIComponent(symbol)}`),
   getStockNews: (symbol) => apiGet(`/api/stock/${encodeURIComponent(symbol)}/news`),
   getStockScorecard: (symbol) => apiGet(`/api/stock/${encodeURIComponent(symbol)}/scorecard`),
+  getStockFinancials: (symbol) => apiGet(`/api/stock/${encodeURIComponent(symbol)}/financials`),
   getCorporateActions: (symbol) => apiGet(`/api/stock/${encodeURIComponent(symbol)}/corporate-actions`),
 
   getMarketTicker: () => apiGet(`/api/market/ticker`),
@@ -39,6 +40,8 @@ const Api = {
   getWatchlist: (symbols) => apiGet(`/api/watchlist/${encodeURIComponent(symbols)}`),
   getHeatmap: () => apiGet(`/api/market/heatmap`),
   getSectorStocks: (key) => apiGet(`/api/market/sector/${encodeURIComponent(key)}/stocks`),
+  getGlobalIndices: () => apiGet(`/api/market/global`),
+  get52WeekData: () => apiGet(`/api/market/52week`),
   getMostActive: () => apiGet(`/api/market/active`),
 
   getInflation: () => apiGet(`/api/macro/inflation`),

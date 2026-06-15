@@ -53,6 +53,9 @@ function setupNavigation() {
     item.addEventListener("click", () => goToPage(item.dataset.page));
   });
 
+  const brandLogo = document.getElementById("brandLogo");
+  if (brandLogo) brandLogo.addEventListener("click", () => goToPage("dashboard"));
+
   document.getElementById("hamburgerBtn").addEventListener("click", () => {
     document.getElementById("sidebar").classList.toggle("open");
   });

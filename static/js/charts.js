@@ -92,24 +92,50 @@ function buildBarChart(canvasId, labels, data, opts = {}) {
 }
 
 /** Tiny sparkline (no axes), used in commodity cards. */
-function buildSparkline(canvasId, data, color) {
+function buildSparkline(canvasId, data, color, opts = {}) {
   destroyChart(canvasId);
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+
+  const datasets = [{
+    data,
+    borderColor: color,
+    backgroundColor: color + "22",
+    tension: 0.35,
+    fill: true,
+    pointRadius: 0,
+    borderWidth: 2,
+  }];
+
+  // Dashed horizontal reference lines for today's high/low, if provided
+  if (opts.dayHigh !== null && opts.dayHigh !== undefined) {
+    datasets.push({
+      data: data.map(() => opts.dayHigh),
+      borderColor: CHART_COLORS.positive,
+      borderWidth: 1,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      fill: false,
+      tension: 0,
+    });
+  }
+  if (opts.dayLow !== null && opts.dayLow !== undefined) {
+    datasets.push({
+      data: data.map(() => opts.dayLow),
+      borderColor: CHART_COLORS.negative,
+      borderWidth: 1,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      fill: false,
+      tension: 0,
+    });
+  }
 
   chartRegistry[canvasId] = new Chart(ctx, {
     type: "line",
     data: {
       labels: data.map((_, i) => i),
-      datasets: [{
-        data,
-        borderColor: color,
-        backgroundColor: color + "22",
-        tension: 0.35,
-        fill: true,
-        pointRadius: 0,
-        borderWidth: 2,
-      }],
+      datasets,
     },
     options: {
       responsive: true,
