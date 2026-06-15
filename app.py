@@ -10,7 +10,7 @@ import time
 import requests
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 from flask import Flask, jsonify, request, render_template
@@ -726,8 +726,10 @@ def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "when:7d"):
 
             try:
                 sort_key = parsedate_to_datetime(pub_date)
+                if sort_key.tzinfo is None:
+                    sort_key = sort_key.replace(tzinfo=timezone.utc)
             except Exception:
-                sort_key = datetime.min
+                sort_key = datetime.min.replace(tzinfo=timezone.utc)
 
             items.append({
                 "title": display_title,
@@ -844,15 +846,17 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
         return items
 
     system_prompt = (
-        "You are a financial news writer for an Indian retail-investor app. "
-        f"For each headline below, write a short ORIGINAL news brief of "
-        f"approximately {word_count} words in your own words. Even within "
-        f"this {word_count}-word limit, cover the key facts (what happened, "
-        "who/what is involved, and the headline number or outcome if any) "
-        "AND why it matters for Indian markets or everyday investors - the "
-        "reader should come away with the full gist of the story, not just "
-        "a teaser. Write in plain English for a non-expert reader, in dense, "
-        "information-rich sentences with no filler or repetition. "
+        "You are a financial news writer for an Indian retail-investor app, known for "
+        "making market news genuinely engaging without sacrificing substance. "
+        f"For each headline (and description, if given) below, write an ORIGINAL news "
+        f"brief of approximately {word_count} words in your own words. "
+        "Structure each brief to cover every angle concisely: (1) what happened - the "
+        "core event, key numbers, names, or outcome; (2) the context - why this is "
+        "happening now or what led to it; (3) the so-what - what it means for Indian "
+        "markets, a sector, or everyday investors. Open with a strong, specific first "
+        "sentence (not a generic lead-in like 'In recent news...'). Write in plain, "
+        "vivid English for a non-expert reader, in dense sentences with zero filler, "
+        "so the reader walks away genuinely informed, not just teased. "
         "Do not quote or closely paraphrase any specific article - write a "
         "general explainer based on the headline and topic. "
         + (f"Context: these headlines relate to {topic_hint}. " if topic_hint else "")
@@ -860,7 +864,10 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
         "the same order as the input, with no extra text."
     )
 
-    headlines = [{"title": it["title"], "source": it.get("source", "")} for it in items]
+    headlines = [
+        {"title": it["title"], "source": it.get("source", ""), "description": it.get("description", "")}
+        for it in items
+    ]
     # Budget enough output tokens for N articles of ~word_count words each
     # (roughly 1.4 tokens/word) plus JSON overhead, capped at a sane max.
     max_tokens = min(8192, max(2048, int(len(items) * word_count * 1.6) + 512))
