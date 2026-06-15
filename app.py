@@ -1337,8 +1337,11 @@ def watchlist(symbols):
 
 
 @app.route("/api/market/overview")
-@cache.cached(timeout=600)
 def market_overview():
+    cached = cache.get("market_overview_response")
+    if cached is not None:
+        return jsonify(cached)
+
     try:
         # ── Indices ────────────────────────────────────────────────────────
         INDEX_MAP = {
@@ -1367,27 +1370,31 @@ def market_overview():
             indices[label] = {"price": price, "change_pct": change_pct}
 
         # ── Gainers / Losers from Nifty 50 basket ──────────────────────────
+        # Per-symbol fast_info via a thread pool — yf.download()'s batch
+        # endpoint is frequently rate-limited/unreliable on Yahoo's side,
+        # whereas fast_info (used successfully for the ticker bar and
+        # heatmap) works reliably per-symbol.
         movers = []
-        yf_failed = False
-        try:
-            symbols = [f"{s}.NS" for s in NIFTY50_SYMBOLS]
-            data = yf.download(symbols, period="2d", interval="1d", group_by="ticker",
-                                progress=False, threads=True)
-            for s in NIFTY50_SYMBOLS:
-                try:
-                    df = data[f"{s}.NS"] if len(symbols) > 1 else data
-                    closes = df["Close"].dropna()
-                    if len(closes) >= 2:
-                        last, prev = closes.iloc[-1], closes.iloc[-2]
-                        pct = round(((last - prev) / prev) * 100, 2)
-                        movers.append({"symbol": s, "price": round(float(last), 2), "change_pct": pct})
-                except Exception:
-                    continue
-        except Exception:
-            yf_failed = True
+
+        def fetch_mover(s):
+            try:
+                fi = yf_ticker(f"{s}.NS").fast_info
+                price = fi.get("lastPrice")
+                prev = fi.get("previousClose")
+                if price and prev:
+                    pct = round(((price - prev) / prev) * 100, 2)
+                    return {"symbol": s, "price": round(float(price), 2), "change_pct": pct}
+            except Exception:
+                pass
+            return None
+
+        with ThreadPoolExecutor(max_workers=15) as executor:
+            for r in executor.map(fetch_mover, NIFTY50_SYMBOLS):
+                if r:
+                    movers.append(r)
 
         # Finnhub fallback: fetch a subset of Nifty50 stocks if Yahoo failed
-        if yf_failed or len(movers) < 5:
+        if len(movers) < 5:
             sample = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
                       "HINDUNILVR", "ITC", "SBIN", "BAJFINANCE", "AXISBANK",
                       "LT", "KOTAKBANK", "TITAN", "WIPRO", "ONGC",
@@ -1404,7 +1411,9 @@ def market_overview():
         gainers = movers_sorted[:5]
         losers = movers_sorted[-5:][::-1]
 
-        return jsonify({"indices": indices, "gainers": gainers, "losers": losers})
+        response_data = {"indices": indices, "gainers": gainers, "losers": losers}
+        cache.set("market_overview_response", response_data, timeout=600 if movers else 60)
+        return jsonify(response_data)
     except Exception as e:
         return jsonify({"error": f"Failed to fetch market overview: {e}"})
 
