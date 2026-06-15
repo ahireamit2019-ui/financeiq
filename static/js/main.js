@@ -43,6 +43,23 @@ function goToPage(pageId) {
     PAGE_LOADERS[pageId]();
   }
 
+  // per-section "Did You Know?" fun fact (maps page id -> fact-key)
+  const FUN_FACT_PAGE_MAP = {
+    dashboard: "dashboard",
+    stock: "stock",
+    market: "market",
+    mutualfunds: "mutualfunds",
+    macro: "macro",
+    inflation: "inflation",
+    tax: "tax",
+    earnings: "business",
+    geo: "geo",
+    calculator: "calculator",
+  };
+  if (FUN_FACT_PAGE_MAP[pageId]) {
+    loadSectionFunFact(FUN_FACT_PAGE_MAP[pageId]);
+  }
+
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -308,6 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadTicker();
   setInterval(loadTicker, 60000);
   loadDailyFunFact();
+  loadSectionFunFact("dashboard");
 
   // dashboard is the default page
   loadedPages.add("dashboard");

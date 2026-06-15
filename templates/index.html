@@ -156,6 +156,14 @@
           <p class="card-note">Net institutional flows move the market — FII buying often lifts large caps, while heavy selling can pressure the Nifty &amp; Sensex.</p>
         </div>
       </div>
+      <div class="section-fun-fact" id="funFact-dashboard-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-dashboard">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- STOCK SEARCH / REPORT CARD ---------- -->
@@ -163,6 +171,14 @@
       <h1 class="page-title">Stock Research</h1>
       <p class="page-subtitle">Search any NSE-listed company above to get a full report card.</p>
       <div id="stockResult"></div>
+      <div class="section-fun-fact" id="funFact-stock-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-stock">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- STOCK MARKET ---------- -->
@@ -222,6 +238,14 @@
           <div class="card skeleton-block"></div>
         </div>
       </div>
+      <div class="section-fun-fact" id="funFact-market-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-market">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- MUTUAL FUNDS ---------- -->
@@ -238,6 +262,14 @@
         </p>
         <div id="mutualFundsTable" class="skeleton-block" style="min-height:300px;margin-top:14px;"></div>
       </div>
+      <div class="section-fun-fact" id="funFact-mutualfunds-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-mutualfunds">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- MACRO ECONOMY ---------- -->
@@ -289,6 +321,14 @@
         <h3 class="card-title">Macro Economy News</h3>
         <div id="macroNews" class="skeleton-block"></div>
       </div>
+      <div class="section-fun-fact" id="funFact-macro-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-macro">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- INFLATION TRACKER ---------- -->
@@ -317,6 +357,14 @@
         <h3 class="card-title">Inflation News</h3>
         <div id="inflationNews" class="skeleton-block"></div>
       </div>
+      <div class="section-fun-fact" id="funFact-inflation-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-inflation">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- TAX UPDATES ---------- -->
@@ -435,6 +483,14 @@
           <p>ELSS mutual funds have the shortest lock-in (3 years) among all 80C investment options.</p>
         </div>
       </div>
+      <div class="section-fun-fact" id="funFact-tax-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-tax">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- BUSINESS & EARNINGS ---------- -->
@@ -451,6 +507,14 @@
         <h3 class="card-title">Latest Business News</h3>
         <div id="businessNews" class="skeleton-block"></div>
       </div>
+      <div class="section-fun-fact" id="funFact-business-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-business">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- GEOPOLITICAL IMPACT ---------- -->
@@ -458,6 +522,14 @@
       <h1 class="page-title">Geopolitical Impact</h1>
       <p class="page-subtitle">Global events that move Indian markets — trade, tariffs, oil &amp; more.</p>
       <div id="geoNews" class="skeleton-block"></div>
+      <div class="section-fun-fact" id="funFact-geo-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-geo">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- COMMODITIES ---------- -->
@@ -524,6 +596,14 @@
           <div id="petrolCalcResult" class="calc-result"></div>
         </div>
       </div>
+      <div class="section-fun-fact" id="funFact-calculator-wrap">
+        <span class="section-fun-fact-icon">💡</span>
+        <div class="section-fun-fact-body">
+          <span class="section-fun-fact-label">Did You Know?</span>
+          <span class="section-fun-fact-text" id="funFact-calculator">Loading...</span>
+        </div>
+      </div>
+
     </section>
 
   </main>
@@ -592,6 +672,7 @@
 <script src="{{ url_for('static', filename='js/market.js') }}"></script>
 <script src="{{ url_for('static', filename='js/currency.js') }}"></script>
 <script src="{{ url_for('static', filename='js/funfacts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sectionfacts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

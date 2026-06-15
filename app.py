@@ -813,10 +813,13 @@ def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "when:7d"):
             del it["_sort_key"]
         items = items[:limit]
 
-        # If the recency filter returned too few/no results, fall back to an
-        # unrestricted search so the page isn't empty.
+        # If the recency filter returned too few/no results, progressively
+        # widen the window (7d -> 14d -> 30d) before giving up entirely -
+        # this avoids jumping straight to fully unrestricted search (which
+        # can surface month(s)-old, often irrelevant results).
         if not items and recency:
-            return fetch_google_news_rss(query, limit=limit, recency=None)
+            next_recency = {"when:7d": "when:14d", "when:14d": "when:30d", "when:30d": None}.get(recency)
+            return fetch_google_news_rss(query, limit=limit, recency=next_recency)
 
     except Exception as e:
         return {"error": f"Could not fetch news: {e}"}, items
@@ -907,29 +910,44 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
     copyrighted article text while still giving the user a useful, readable
     summary directly in the app.
 
-    Returns the items list with an added 'article' field on each item
-    (or unchanged items if no API key / on error).
+    Also performs relevance filtering: if a headline is not genuinely
+    relevant to `topic_hint` / Indian financial markets, or isn't a real
+    news story (forum posts, exam-prep listicles, generic global content
+    with no India angle, etc.), the AI returns `null` for that entry and
+    the item is DROPPED from the returned list entirely - rather than
+    showing the user a meta-commentary about why it couldn't write about it.
+
+    Returns the filtered items list with an added 'article' field on each
+    item (or the original items unchanged if no API key / on error).
     """
     if not items or not api_key:
         return items
 
     system_prompt = (
-        "You are a financial news writer for an Indian retail-investor app, known for "
-        "making market news genuinely engaging without sacrificing substance. "
-        f"For each headline (and description, if given) below, write an ORIGINAL news "
-        f"brief of approximately {word_count} words in your own words. "
-        "Structure each brief to cover every angle concisely: (1) what happened - the "
-        "core event, key numbers, names, or outcome; (2) the context - why this is "
-        "happening now or what led to it; (3) the so-what - what it means for Indian "
-        "markets, a sector, or everyday investors. Open with a strong, specific first "
-        "sentence (not a generic lead-in like 'In recent news...'). Write in plain, "
-        "vivid English for a non-expert reader, in dense sentences with zero filler, "
-        "so the reader walks away genuinely informed, not just teased. "
+        "You are a financial news editor and writer for an Indian retail-investor app, "
+        "known for making market news genuinely engaging without sacrificing substance. "
+        f"For each headline (and description, if given) below, first decide if it is "
+        f"GENUINELY relevant: it must be real financial/business/economic/policy news "
+        + (f"specifically connected to {topic_hint}, " if topic_hint else "specifically connected to India, ")
+        + "with a clear angle for an Indian retail investor. "
+        "Reject (return null for) anything that is: a forum/aggregator post (e.g. 'Show HN', "
+        "'Ask HN'), an exam-prep or listicle-style roundup (e.g. 'UPSC Key', 'X things to "
+        "know/watch'), generic global content with no India connection, or news primarily "
+        "about another country (e.g. Nepal, Pakistan, Vietnam, Bangladesh) where India is "
+        "only mentioned in passing. When in doubt, reject rather than force a connection. "
+        f"For every headline you ACCEPT, write an ORIGINAL news brief of approximately "
+        f"{word_count} words in your own words. Structure each brief to cover every angle "
+        "concisely: (1) what happened - the core event, key numbers, names, or outcome; "
+        "(2) the context - why this is happening now or what led to it; (3) the so-what - "
+        "what it means for Indian markets, a sector, or everyday investors. Open with a "
+        "strong, specific first sentence (not a generic lead-in like 'In recent news...'). "
+        "Write in plain, vivid English for a non-expert reader, in dense sentences with "
+        "zero filler, so the reader walks away genuinely informed, not just teased. "
         "Do not quote or closely paraphrase any specific article - write a "
         "general explainer based on the headline and topic. "
-        + (f"Context: these headlines relate to {topic_hint}. " if topic_hint else "")
-        + "Return ONLY a valid JSON array of strings, one per headline, in "
-        "the same order as the input, with no extra text."
+        "Return ONLY a valid JSON array, one entry per input headline IN THE SAME ORDER: "
+        "either a string (the brief, for accepted headlines) or the JSON value null "
+        "(for rejected headlines). No extra text."
     )
 
     headlines = [
@@ -947,11 +965,13 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
     if err or not isinstance(result, list):
         return items
 
+    accepted = []
     for i, brief in enumerate(result):
-        if i < len(items) and isinstance(brief, str):
+        if i < len(items) and isinstance(brief, str) and brief.strip():
             items[i]["article"] = brief
+            accepted.append(items[i])
 
-    return items
+    return accepted
 
 
 # ---------------------------------------------------------------------------
@@ -1121,8 +1141,8 @@ def stock_news(symbol):
         #  1. Yahoo Finance's own news feed for this ticker (often the freshest)
         #  2. NewsAPI (if a key is configured)
         #  3. Google News RSS (no key needed)
-        yahoo_items = fetch_yahoo_finance_news(f"{nse_symbol}.NS", limit=6)
-        err, search_items = fetch_news(f"{company_name} stock India", limit=6)
+        yahoo_items = fetch_yahoo_finance_news(f"{nse_symbol}.NS", limit=8)
+        err, search_items = fetch_news(f"{company_name} stock India", limit=8)
         if err and not yahoo_items:
             return jsonify(err)
 
@@ -1138,11 +1158,13 @@ def stock_news(symbol):
                 seen.add(key)
                 deduped.append(it)
 
-        # Freshest first
+        # Freshest first - keep extra headroom since relevance filtering
+        # below may drop a few before we trim to the final display count.
         deduped.sort(key=lambda it: parse_news_date(it.get("published", "")), reverse=True)
-        items = deduped[:6]
+        items = deduped[:10]
 
         items = generate_news_briefs(items, get_anthropic_key(), topic_hint=f"{company_name} (Indian stock)")
+        items = items[:6]
         return jsonify({"symbol": nse_symbol, "news": items})
     except Exception as e:
         return jsonify({"error": f"Failed to fetch news: {e}"})
@@ -2062,13 +2084,13 @@ def exchange_rates():
 
 
 NEWS_CATEGORY_QUERIES = {
-    "geo": "India trade tariff war oil China US relations economy",
-    "policy": "India government policy announcement budget ministry",
-    "business": "India business earnings corporate news",
-    "tax": "India income tax GST budget tax news",
-    "market": "India stock market Nifty Sensex news",
-    "inflation": "India inflation CPI WPI prices food fuel RBI",
-    "macro": "India GDP growth economy IIP PMI manufacturing data",
+    "geo": "India trade tariffs exports imports China United States relations economy impact",
+    "policy": "India government Parliament Lok Sabha cabinet policy decision Modi ministry",
+    "business": "Nifty Sensex India company earnings quarterly results corporate",
+    "tax": "India income tax ITR GST CBDT Nirmala Sitharaman budget rules",
+    "market": "Sensex Nifty BSE NSE India stock market today shares",
+    "inflation": "India retail inflation CPI WPI Reserve Bank RBI prices",
+    "macro": "India GDP economy Reserve Bank RBI IIP PMI growth data",
 }
 
 NEWS_CATEGORY_TOPIC_HINTS = {
@@ -2084,13 +2106,13 @@ NEWS_CATEGORY_TOPIC_HINTS = {
 # Per-category: how many stories to fetch, and roughly how many words each
 # AI-generated brief should be.
 NEWS_CATEGORY_CONFIG = {
-    "geo": {"limit": 20, "words": 100},
-    "policy": {"limit": 10, "words": 100},
-    "business": {"limit": 20, "words": 100},
-    "tax": {"limit": 10, "words": 100},
-    "market": {"limit": 8, "words": 100},
-    "inflation": {"limit": 10, "words": 100},
-    "macro": {"limit": 10, "words": 100},
+    "geo": {"limit": 28, "display_limit": 8, "words": 100},
+    "policy": {"limit": 16, "display_limit": 6, "words": 100},
+    "business": {"limit": 28, "display_limit": 8, "words": 100},
+    "tax": {"limit": 16, "display_limit": 6, "words": 100},
+    "market": {"limit": 14, "display_limit": 6, "words": 100},
+    "inflation": {"limit": 16, "display_limit": 6, "words": 100},
+    "macro": {"limit": 16, "display_limit": 6, "words": 100},
 }
 
 
@@ -2145,9 +2167,14 @@ def news_by_category(category):
                     items[i]["impact_reason"] = tag.get("reason", "")
 
     # Generate short, original briefs for every category so the app doesn't
-    # just redirect users to (and reproduce) external articles.
+    # just redirect users to (and reproduce) external articles. Items that
+    # the AI determines aren't genuinely relevant are dropped here.
     topic_hint = NEWS_CATEGORY_TOPIC_HINTS.get(category, "Indian financial news")
     items = generate_news_briefs(items, api_key, topic_hint=topic_hint, word_count=config["words"])
+    items = items[:config.get("display_limit", config["limit"])]
+
+    if not items:
+        return jsonify({"error": "No relevant news found right now. Please try again shortly."})
 
     return jsonify({"category": category, "news": items})
 
