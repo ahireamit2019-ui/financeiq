@@ -2204,14 +2204,23 @@ MUTUAL_FUND_WATCHLIST = [
 
 
 def mfapi_search(query: str) -> list:
-    """Search MFAPI.in for scheme name/code matches."""
-    try:
-        resp = requests.get(f"{MFAPI_BASE}/search", params={"q": query}, timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    """Search MFAPI.in for scheme name/code matches. Retries once on
+    rate-limit responses (mfapi.in can 429 under burst traffic)."""
+    for attempt in range(2):
+        try:
+            resp = requests.get(f"{MFAPI_BASE}/search", params={"q": query}, timeout=8)
+            if resp.status_code == 429 and attempt == 0:
+                time.sleep(1.5)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            return data if isinstance(data, list) else []
+        except Exception:
+            if attempt == 0:
+                time.sleep(1.0)
+                continue
+            return []
+    return []
 
 
 def pick_direct_growth_scheme(matches: list, base_query: str) -> dict | None:
@@ -2239,16 +2248,25 @@ def pick_direct_growth_scheme(matches: list, base_query: str) -> dict | None:
 
 
 def mfapi_nav_history(scheme_code) -> dict | None:
-    """Fetch full NAV history for a scheme code."""
-    try:
-        resp = requests.get(f"{MFAPI_BASE}/{scheme_code}", timeout=8)
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("status") == "SUCCESS" and data.get("data"):
-            return data
-        return None
-    except Exception:
-        return None
+    """Fetch full NAV history for a scheme code. Retries once on
+    rate-limit responses (mfapi.in can 429 under burst traffic)."""
+    for attempt in range(2):
+        try:
+            resp = requests.get(f"{MFAPI_BASE}/{scheme_code}", timeout=10)
+            if resp.status_code == 429 and attempt == 0:
+                time.sleep(1.5)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("status") == "SUCCESS" and data.get("data"):
+                return data
+            return None
+        except Exception:
+            if attempt == 0:
+                time.sleep(1.0)
+                continue
+            return None
+    return None
 
 
 def find_nav_near(nav_data: list, target_date: datetime) -> float | None:
@@ -2312,7 +2330,6 @@ def fetch_one_fund(fund: dict) -> dict | None:
 
 
 @app.route("/api/mutualfunds/top")
-@cache.cached(timeout=21600)
 def mutual_funds_top():
     """Top performing direct-growth mutual funds by 1-year return.
 
@@ -2321,13 +2338,22 @@ def mutual_funds_top():
     gunicorn's worker timeout even with ~28 funds tracked. We track more
     funds than needed (28) since some lookups inevitably fail to resolve on
     MFAPI, ensuring we still end up with 10 valid results.
+
+    Cached manually (rather than via @cache.cached) so a transient MFAPI
+    outage that returns zero results doesn't get stuck in cache for 6 hours -
+    empty results are retried again after 2 minutes, good results are kept
+    for 6 hours.
     """
+    cached = cache.get("mutualfunds_top_response")
+    if cached is not None:
+        return jsonify(cached)
+
     results = []
 
-    with ThreadPoolExecutor(max_workers=14) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(fetch_one_fund, fund) for fund in MUTUAL_FUND_WATCHLIST]
         try:
-            for future in as_completed(futures, timeout=45):
+            for future in as_completed(futures, timeout=50):
                 try:
                     fund_result = future.result()
                 except Exception:
@@ -2349,7 +2375,7 @@ def mutual_funds_top():
     # Sort by 1-year return (funds with missing 1Y data go last)
     results.sort(key=lambda r: (r["return_1y"] is None, -(r["return_1y"] or 0)))
 
-    return jsonify({
+    response_data = {
         "funds": results[:10],
         "note": (
             "NAV and return data sourced from AMFI via MFAPI.in (free, no key required). "
@@ -2357,7 +2383,13 @@ def mutual_funds_top():
             "on Direct Growth plan NAVs. Past performance does not guarantee future returns — "
             "verify on the fund house website or AMFI before investing."
         ),
-    })
+    }
+
+    # Cache good results for 6h; cache empty results only briefly so a
+    # transient MFAPI hiccup self-heals on the next request.
+    cache.set("mutualfunds_top_response", response_data, timeout=21600 if results else 120)
+
+    return jsonify(response_data)
 
 
 @app.route("/api/mutualfunds/<int:scheme_code>/detail")

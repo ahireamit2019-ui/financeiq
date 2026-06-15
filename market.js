@@ -113,12 +113,20 @@ function renderIndexOverview(indices) {
   const el = document.getElementById("indexOverview");
   if (!el || !indices) return;
 
-  el.innerHTML = Object.entries(indices).map(([label, v]) => `
-    <div class="card">
+  el.innerHTML = Object.entries(indices).map(([label, v]) => {
+    const key = INDEX_OVERVIEW_STOCK_KEY[label];
+    return `
+    <div class="card ${key ? "heatmap-clickable" : ""}" ${key ? `data-key="${key}" data-label="${label}" style="cursor:pointer;"` : ""}>
       <h3 class="card-title">${label}</h3>
       <div class="price-now">${formatIndian(v.price)}</div>
       <div class="price-change ${pctClass(v.change_pct)}">${arrow(v.change_pct)} ${formatPct(v.change_pct)}</div>
-    </div>`).join("");
+      ${key ? `<div class="ipo-cta">Tap for top stocks →</div>` : ""}
+    </div>`;
+  }).join("");
+
+  el.querySelectorAll(".heatmap-clickable").forEach((card) => {
+    card.addEventListener("click", () => openSectorStocksModal(card.dataset.key, card.dataset.label));
+  });
 }
 
 async function loadInflationSnapshot() {
@@ -223,6 +231,8 @@ async function loadMarketPage() {
   loadHeatmap();
   loadMostActiveTable();
   loadIpoSection();
+  loadGlobalIndices();
+  load52WeekSection();
 }
 
 /* ============================ IPO SPOTLIGHT ============================ */
@@ -303,7 +313,17 @@ function openIpoModal(ipo) {
 const SECTOR_LABELS = {
   Auto: "Auto", Bank: "Bank", IT: "IT", Pharma: "Pharma", FMCG: "FMCG",
   Metal: "Metal", Realty: "Realty", Energy: "Energy", Infra: "Infra", Media: "Media",
-  Defence: "Defence", "Nifty Midcap 150": "Midcap 150", "Nifty Smallcap 250": "Smallcap 250",
+  Defence: "Defence",
+  "Nifty 50": "Nifty 50", "SENSEX": "Sensex", "NIFTY BANK": "Nifty Bank", "NIFTY MIDCAP": "Nifty Midcap",
+};
+
+// Maps an index-overview card label to the SECTOR_STOCKS key used by
+// /api/market/sector/<key>/stocks for its "click to see stocks" popup.
+const INDEX_OVERVIEW_STOCK_KEY = {
+  "NIFTY 50": "Nifty 50",
+  "SENSEX": "Nifty 50",
+  "NIFTY BANK": "Bank",
+  "NIFTY MIDCAP": "Nifty Midcap",
 };
 
 async function loadHeatmap() {
@@ -367,6 +387,99 @@ async function openSectorStocksModal(key, sectorLabel) {
   `;
 
   listEl.querySelectorAll(".stock-row-clickable").forEach((row) => {
+    row.addEventListener("click", () => {
+      closeModal();
+      searchStock(row.dataset.symbol);
+    });
+  });
+}
+
+/* ============================ GLOBAL MARKETS ============================ */
+
+async function loadGlobalIndices() {
+  const el = document.getElementById("globalIndices");
+  if (!el) return;
+  const data = await Api.getGlobalIndices();
+
+  if (data.error) {
+    el.innerHTML = errorBlock(data.error, loadGlobalIndices);
+    return;
+  }
+
+  el.innerHTML = Object.entries(data).map(([label, v]) => `
+    <div class="card">
+      <h3 class="card-title">${label}</h3>
+      <div class="price-now">${v.price !== null ? formatIndian(v.price) : "—"}</div>
+      <div class="price-change ${pctClass(v.change_pct)}">${arrow(v.change_pct)} ${formatPct(v.change_pct)}</div>
+    </div>`).join("");
+}
+
+/* ============================ 52-WEEK HIGH/LOW ============================ */
+
+function render52WeekRow(stock, mode) {
+  const pct = mode === "high" ? stock.pct_from_high : stock.pct_from_low;
+  const refPrice = mode === "high" ? stock.year_high : stock.year_low;
+  const refLabel = mode === "high" ? "52W High" : "52W Low";
+  return `
+    <div class="mover-row stock-link" data-symbol="${stock.symbol}" style="cursor:pointer;">
+      <span class="symbol">${stock.symbol}</span>
+      <span class="price">${formatRupee(stock.price)}</span>
+      <span class="pct ${pctClass(pct)}">${arrow(pct)} ${formatPct(pct)} <span style="color:var(--text-muted);font-weight:400;">vs ${refLabel} ${formatRupee(refPrice)}</span></span>
+    </div>`;
+}
+
+async function load52WeekSection() {
+  const el = document.getElementById("week52Grid");
+  if (!el) return;
+  const data = await Api.get52WeekData();
+
+  if (data.error) {
+    el.innerHTML = errorBlock(data.error, load52WeekSection);
+    return;
+  }
+
+  window.WEEK52_ALL = data.all || [];
+
+  el.innerHTML = `
+    <div class="card">
+      <h3 class="card-title">Near 52-Week High</h3>
+      ${(data.near_high || []).map((s) => render52WeekRow(s, "high")).join("")}
+    </div>
+    <div class="card">
+      <h3 class="card-title">Near 52-Week Low</h3>
+      ${(data.near_low || []).map((s) => render52WeekRow(s, "low")).join("")}
+    </div>
+  `;
+
+  const btn = document.getElementById("week52ShowAllBtn");
+  if (btn) btn.onclick = open52WeekAllModal;
+}
+
+function open52WeekAllModal() {
+  const all = window.WEEK52_ALL || [];
+
+  openModal(`
+    <div class="modal-title">52-Week High / Low — All Stocks</div>
+    <div class="modal-subtitle">Ranked by distance from 52-week high (closest first)</div>
+    <div class="table-wrap" style="margin-top:14px;">
+      <table class="data-table sector-stocks-table">
+        <thead><tr><th>Stock</th><th>Price</th><th>52W High</th><th>52W Low</th><th>From High</th><th>From Low</th></tr></thead>
+        <tbody>
+          ${all.map((s) => `
+            <tr class="stock-row-clickable" data-symbol="${s.symbol}">
+              <td>${s.symbol}</td>
+              <td>${formatRupee(s.price)}</td>
+              <td>${formatRupee(s.year_high)}</td>
+              <td>${formatRupee(s.year_low)}</td>
+              <td class="${pctClass(s.pct_from_high)}">${formatPct(s.pct_from_high)}</td>
+              <td class="${pctClass(s.pct_from_low)}">${formatPct(s.pct_from_low)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  `);
+
+  document.querySelectorAll("#modalOverlay .stock-row-clickable").forEach((row) => {
     row.addEventListener("click", () => {
       closeModal();
       searchStock(row.dataset.symbol);
@@ -713,11 +826,18 @@ async function loadCommoditiesPage() {
   el.innerHTML = Object.entries(data).map(([name, v], i) => {
     const canvasId = `spark-${i}`;
     const priceDisplay = formatCommodityPrice(v);
+    const unitLabel = v.unit && v.unit !== "USD" ? v.unit : "";
+    const dayHigh = v.day_high !== null && v.day_high !== undefined ? `$${formatIndian(v.day_high)}` : "—";
+    const dayLow = v.day_low !== null && v.day_low !== undefined ? `$${formatIndian(v.day_low)}` : "—";
     return `
       <div class="card commodity-card commodity-clickable" data-commodity="${name}" style="cursor:pointer;">
         <div class="commodity-name">${name}</div>
         <div class="commodity-price">${priceDisplay}</div>
         <div class="commodity-change ${pctClass(v.change_pct)}">${arrow(v.change_pct)} ${formatPct(v.change_pct)}</div>
+        <div class="commodity-hilo">
+          <span class="hilo-low">Day Low: <strong>${dayLow}</strong>${unitLabel}</span>
+          <span class="hilo-high">Day High: <strong>${dayHigh}</strong>${unitLabel}</span>
+        </div>
         <div class="spark-wrap"><canvas id="${canvasId}"></canvas></div>
         <div class="ipo-cta">Tap for latest news →</div>
       </div>`;
@@ -727,7 +847,7 @@ async function loadCommoditiesPage() {
   Object.entries(data).forEach(([name, v], i) => {
     if (v.sparkline && v.sparkline.length) {
       const color = (v.change_pct ?? 0) >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
-      buildSparkline(`spark-${i}`, v.sparkline, color);
+      buildSparkline(`spark-${i}`, v.sparkline, color, { dayHigh: v.day_high, dayLow: v.day_low });
     }
   });
 
@@ -789,7 +909,10 @@ async function loadMutualFundsPage() {
 
   if (!data.funds || data.funds.length === 0) {
     el.classList.remove("skeleton-block");
-    el.innerHTML = `<p class="card-note">No mutual fund data available right now.</p>`;
+    el.innerHTML = errorBlock(
+      "Mutual fund data is temporarily unavailable (the data source may be slow to respond) - please try again in a minute.",
+      loadMutualFundsPage
+    );
     return;
   }
 
