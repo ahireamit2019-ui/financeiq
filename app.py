@@ -698,6 +698,80 @@ def fetch_newsapi(query: str, limit: int = 10) -> tuple:
         return {"error": f"NewsAPI request failed: {e}"}, []
 
 
+def parse_news_date(date_str: str) -> datetime:
+    """Best-effort parse of a news item's published date into a tz-aware
+    datetime, handling both RFC822 (Google News RSS) and ISO 8601
+    (NewsAPI / Yahoo Finance) formats. Falls back to the epoch start so
+    unparseable dates sort last rather than crashing the sort."""
+    if not date_str:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        dt = parsedate_to_datetime(date_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        pass
+    try:
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        pass
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def fetch_yahoo_finance_news(yf_symbol: str, limit: int = 5) -> list:
+    """Free, no-key stock news straight from Yahoo Finance via yfinance.
+    Often fresher than NewsAPI/Google News for individual stocks since it
+    reflects Yahoo's own news feed for that ticker."""
+    try:
+        raw = yf_ticker(yf_symbol).get_news(count=limit)
+    except Exception:
+        return []
+
+    items = []
+    for article in raw or []:
+        # Newer yfinance versions nest fields under "content"; older
+        # versions return them at the top level. Support both.
+        content = article.get("content") if isinstance(article.get("content"), dict) else article
+
+        title = content.get("title") or ""
+        if not title:
+            continue
+
+        provider = content.get("provider") or {}
+        source = (
+            provider.get("displayName")
+            if isinstance(provider, dict) else None
+        ) or content.get("publisher") or "Yahoo Finance"
+
+        canonical = content.get("canonicalUrl")
+        link = (
+            canonical.get("url") if isinstance(canonical, dict) else None
+        ) or content.get("link") or ""
+
+        published = content.get("pubDate") or content.get("displayTime") or ""
+        if not published and content.get("providerPublishTime"):
+            try:
+                published = datetime.fromtimestamp(
+                    content["providerPublishTime"], tz=timezone.utc
+                ).isoformat()
+            except Exception:
+                published = ""
+
+        items.append({
+            "title": title,
+            "source": source,
+            "link": link,
+            "published": published,
+            "description": content.get("summary") or content.get("description") or "",
+        })
+
+    return items[:limit]
+
+
 def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "when:7d"):
     """Fetch and parse Google News RSS for a query. No API key required.
 
@@ -724,13 +798,7 @@ def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "when:7d"):
             if " - " in title and source:
                 display_title = title.rsplit(" - ", 1)[0]
 
-            try:
-                sort_key = parsedate_to_datetime(pub_date)
-                if sort_key.tzinfo is None:
-                    sort_key = sort_key.replace(tzinfo=timezone.utc)
-            except Exception:
-                sort_key = datetime.min.replace(tzinfo=timezone.utc)
-
+            sort_key = parse_news_date(pub_date)
             items.append({
                 "title": display_title,
                 "source": source or "Google News",
@@ -1049,9 +1117,30 @@ def stock_news(symbol):
         except Exception:
             company_name = nse_symbol
 
-        err, items = fetch_news(f"{company_name} stock India", limit=5)
-        if err:
+        # Combine three free sources for maximum freshness:
+        #  1. Yahoo Finance's own news feed for this ticker (often the freshest)
+        #  2. NewsAPI (if a key is configured)
+        #  3. Google News RSS (no key needed)
+        yahoo_items = fetch_yahoo_finance_news(f"{nse_symbol}.NS", limit=6)
+        err, search_items = fetch_news(f"{company_name} stock India", limit=6)
+        if err and not yahoo_items:
             return jsonify(err)
+
+        combined = yahoo_items + (search_items or [])
+
+        # Dedupe by normalized title prefix (different sources often carry
+        # the same wire-service headline with slightly different suffixes).
+        seen = set()
+        deduped = []
+        for it in combined:
+            key = (it.get("title") or "").strip().lower()[:60]
+            if key and key not in seen:
+                seen.add(key)
+                deduped.append(it)
+
+        # Freshest first
+        deduped.sort(key=lambda it: parse_news_date(it.get("published", "")), reverse=True)
+        items = deduped[:6]
 
         items = generate_news_briefs(items, get_anthropic_key(), topic_hint=f"{company_name} (Indian stock)")
         return jsonify({"symbol": nse_symbol, "news": items})
@@ -2011,8 +2100,27 @@ def news_by_category(category):
     query = NEWS_CATEGORY_QUERIES.get(category, f"India {category} news")
     config = NEWS_CATEGORY_CONFIG.get(category, {"limit": 8, "words": 150})
     err, items = fetch_news(query, limit=config["limit"])
-    if err:
-        return jsonify(err)
+    if err and not items:
+        items = []
+
+    # Supplement market/business news with Yahoo Finance's own feed for the
+    # major indices - often fresher than search-based results, and free.
+    if category in ("market", "business"):
+        for idx_symbol in ("^NSEI", "^BSESN"):
+            items.extend(fetch_yahoo_finance_news(idx_symbol, limit=4))
+
+        seen = set()
+        deduped = []
+        for it in items:
+            key = (it.get("title") or "").strip().lower()[:60]
+            if key and key not in seen:
+                seen.add(key)
+                deduped.append(it)
+        deduped.sort(key=lambda it: parse_news_date(it.get("published", "")), reverse=True)
+        items = deduped[:config["limit"]]
+
+    if not items:
+        return jsonify({"error": "Could not fetch news right now. Please try again shortly."})
 
     api_key = get_anthropic_key()
 
