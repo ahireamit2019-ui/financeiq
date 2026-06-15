@@ -113,12 +113,20 @@ function renderIndexOverview(indices) {
   const el = document.getElementById("indexOverview");
   if (!el || !indices) return;
 
-  el.innerHTML = Object.entries(indices).map(([label, v]) => `
-    <div class="card">
+  el.innerHTML = Object.entries(indices).map(([label, v]) => {
+    const key = INDEX_OVERVIEW_STOCK_KEY[label];
+    return `
+    <div class="card ${key ? "heatmap-clickable" : ""}" ${key ? `data-key="${key}" data-label="${label}" style="cursor:pointer;"` : ""}>
       <h3 class="card-title">${label}</h3>
       <div class="price-now">${formatIndian(v.price)}</div>
       <div class="price-change ${pctClass(v.change_pct)}">${arrow(v.change_pct)} ${formatPct(v.change_pct)}</div>
-    </div>`).join("");
+      ${key ? `<div class="ipo-cta">Tap for top stocks →</div>` : ""}
+    </div>`;
+  }).join("");
+
+  el.querySelectorAll(".heatmap-clickable").forEach((card) => {
+    card.addEventListener("click", () => openSectorStocksModal(card.dataset.key, card.dataset.label));
+  });
 }
 
 async function loadInflationSnapshot() {
@@ -303,7 +311,17 @@ function openIpoModal(ipo) {
 const SECTOR_LABELS = {
   Auto: "Auto", Bank: "Bank", IT: "IT", Pharma: "Pharma", FMCG: "FMCG",
   Metal: "Metal", Realty: "Realty", Energy: "Energy", Infra: "Infra", Media: "Media",
-  Defence: "Defence", "Nifty Midcap 150": "Midcap 150", "Nifty Smallcap 250": "Smallcap 250",
+  Defence: "Defence",
+  "Nifty 50": "Nifty 50", "SENSEX": "Sensex", "NIFTY BANK": "Nifty Bank", "NIFTY MIDCAP": "Nifty Midcap",
+};
+
+// Maps an index-overview card label to the SECTOR_STOCKS key used by
+// /api/market/sector/<key>/stocks for its "click to see stocks" popup.
+const INDEX_OVERVIEW_STOCK_KEY = {
+  "NIFTY 50": "Nifty 50",
+  "SENSEX": "Nifty 50",
+  "NIFTY BANK": "Bank",
+  "NIFTY MIDCAP": "Nifty Midcap",
 };
 
 async function loadHeatmap() {

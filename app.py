@@ -370,7 +370,111 @@ COMPANY_MAP = {
     "delhivery": "DELHIVERY",
     "cartrade tech": "CARTRADE", "cartrade": "CARTRADE",
     "go digit": "GODIGIT",
+
+    # Defence
+    "hindustan aeronautics": "HAL", "hal": "HAL",
+    "bharat electronics": "BEL", "bel": "BEL",
+    "bharat dynamics": "BDL", "bdl": "BDL",
+    "mazagon dock": "MAZDOCK", "mazagon dock shipbuilders": "MAZDOCK",
+    "cochin shipyard": "COCHINSHIP",
+    "solar industries": "SOLARINDS",
+    "beml": "BEML",
+    "data patterns": "DATAPATTNS",
+
+    # Infra / construction
+    "gmr airports": "GMRINFRA", "gmr infra": "GMRINFRA",
+    "irb infrastructure": "IRB",
+    "kec international": "KEC",
+    "nbcc": "NBCC", "nbcc india": "NBCC",
+    "ncc limited": "NCC",
+    "rail vikas nigam": "RVNL", "rvnl": "RVNL",
+
+    # Realty
+    "brigade enterprises": "BRIGADE",
+    "sobha limited": "SOBHA", "sobha": "SOBHA",
+
+    # Media
+    "dish tv": "DISHTV",
+    "network18": "NETWORK18", "network 18": "NETWORK18",
+    "saregama india": "SAREGAMA", "saregama": "SAREGAMA",
+    "tips industries": "TIPSINDLTD", "tips music": "TIPSINDLTD",
+    "nazara technologies": "NAZARA", "nazara": "NAZARA",
+
+    # Mid/large cap consumer & financials
+    "astral limited": "ASTRAL", "astral pipes": "ASTRAL",
+    "supreme industries": "SUPREMEIND",
+    "max financial services": "MFSL", "max financial": "MFSL",
+    "tata consumer products": "TATACONSUM", "tata consumer": "TATACONSUM",
+
+    # Other popular large/mid caps not yet covered
+    "adani enterprises": "ADANIENT",
+    "adani power": "ADANIPOWER",
+    "jio financial services": "JIOFIN", "jio financial": "JIOFIN",
+    "zomato": "ETERNAL", "eternal": "ETERNAL",
+    "paytm": "PAYTM", "one97 communications": "PAYTM",
+    "policybazaar": "PBFINTECH", "pb fintech": "PBFINTECH",
+    "swiggy": "SWIGGY",
+    "vodafone idea": "IDEA", "vi": "IDEA",
+    "punjab national bank": "PNB",
+    "bank of baroda": "BANKBARODA",
+    "canara bank": "CANBK",
+    "union bank of india": "UNIONBANK",
+    "indian oil": "IOC", "indian oil corporation": "IOC",
+    "bharat petroleum": "BPCL",
+    "hindustan petroleum": "HINDPETRO",
+    "ntpc limited": "NTPC", "ntpc green energy": "NTPCGREEN",
+    "power grid": "POWERGRID", "power grid corporation": "POWERGRID",
+    "vedanta limited": "VEDL", "vedanta": "VEDL",
+    "jindal steel": "JINDALSTEL", "jindal steel and power": "JINDALSTEL",
+    "sail": "SAIL", "steel authority of india": "SAIL",
+    "nmdc limited": "NMDC",
+    "coal india": "COALINDIA",
+    "dlf limited": "DLF",
+    "godrej properties": "GODREJPROP",
+    "oberoi realty": "OBEROIRLTY",
+    "phoenix mills": "PHOENIXLTD",
+    "prestige estates": "PRESTIGE",
+    "lodha": "LODHA", "macrotech developers": "LODHA",
+    "indian hotels": "INDHOTEL", "taj hotels": "INDHOTEL",
+    "federal bank": "FEDERALBNK",
+    "au small finance bank": "AUBANK",
+    "polycab india": "POLYCAB", "polycab": "POLYCAB",
+    "coforge": "COFORGE",
+    "page industries": "PAGEIND", "jockey": "PAGEIND",
+    "zee entertainment": "ZEEL", "zee": "ZEEL",
+    "sun tv network": "SUNTV", "sun tv": "SUNTV",
+    "pvr inox": "PVRINOX", "pvr": "PVRINOX",
+    "lupin limited": "LUPIN",
+    "aurobindo pharma": "AUROPHARMA",
+    "torrent pharma": "TORNTPHARM", "torrent pharmaceuticals": "TORNTPHARM",
+    "zydus lifesciences": "ZYDUSLIFE", "zydus": "ZYDUSLIFE",
+    "divi's laboratories": "DIVISLAB", "divis lab": "DIVISLAB",
+    "marico limited": "MARICO",
+    "dabur india": "DABUR",
+    "godrej consumer": "GODREJCP", "godrej consumer products": "GODREJCP",
+    "britannia industries": "BRITANNIA",
+    "nestle india": "NESTLEIND",
+    "ashok leyland": "ASHOKLEY",
+    "tvs motor": "TVSMOTOR", "tvs motor company": "TVSMOTOR",
+    "eicher motors": "EICHERMOT", "royal enfield": "EICHERMOT",
+    "hero motocorp": "HEROMOTOCO",
+    "mahindra and mahindra": "M&M", "mahindra": "M&M",
+    "bajaj auto": "BAJAJ-AUTO",
+    "wipro limited": "WIPRO",
+    "tech mahindra": "TECHM",
+    "ltimindtree": "LTIM", "lti mindtree": "LTIM",
+    "mphasis": "MPHASIS",
+    "persistent systems": "PERSISTENT",
+    "hcl technologies": "HCLTECH", "hcl tech": "HCLTECH",
+    "adani green energy": "ADANIGREEN", "adani green": "ADANIGREEN",
+    "tata power": "TATAPOWER",
+    "ongc": "ONGC", "oil and natural gas corporation": "ONGC",
+    "adani ports": "ADANIPORTS", "adani ports and sez": "ADANIPORTS",
+    "larsen and toubro": "LT", "l&t": "LT",
+    "indusind bank": "INDUSINDBK",
+    "bharti airtel": "BHARTIARTL", "airtel": "BHARTIARTL",
 }
+
 
 NIFTY50_SYMBOLS = [
     "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "SBIN", "BHARTIARTL",
@@ -393,17 +497,10 @@ SECTOR_INDICES = {
     "Media": "^CNXMEDIA",
 }
 
-# Broad-market indices shown alongside the sector heatmap. These have no
-# single-sector composition, so clicking them shows a representative basket
-# of constituent stocks rather than the full 150/250-stock list.
-HEATMAP_INDEX_TICKERS = {
-    "Nifty Midcap 150": "NIFTYMIDCAP150.NS",
-    "Nifty Smallcap 250": "NIFTYSMLCAP250.NS",
-}
-
-# Curated representative stocks shown when a heatmap cell is clicked.
-# "Defence" has no Yahoo sector-index ticker, so its heatmap change_pct is
-# computed as the average change of these constituents instead.
+# Curated representative stocks shown when a heatmap cell, or one of the
+# index overview cards (Nifty 50 / Sensex / Nifty Bank / Nifty Midcap), is
+# clicked. "Defence" has no Yahoo sector-index ticker, so its heatmap
+# change_pct is computed as the average change of these constituents instead.
 SECTOR_STOCKS = {
     "Auto": ["MARUTI", "TATAMOTORS", "M&M", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "ASHOKLEY", "TVSMOTOR"],
     "Bank": ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "INDUSINDBK", "BANKBARODA", "PNB"],
@@ -416,8 +513,18 @@ SECTOR_STOCKS = {
     "Infra": ["LT", "ADANIPORTS", "GMRINFRA", "IRB", "NBCC", "NCC", "KEC", "RVNL"],
     "Media": ["ZEEL", "SUNTV", "PVRINOX", "NETWORK18", "DISHTV", "TIPSINDLTD", "SAREGAMA", "NAZARA"],
     "Defence": ["HAL", "BEL", "BDL", "MAZDOCK", "COCHINSHIP", "SOLARINDS", "BEML", "DATAPATTNS"],
-    "Nifty Midcap 150": ["PERSISTENT", "FEDERALBNK", "INDHOTEL", "POLYCAB", "COFORGE", "MFSL", "ASTRAL", "SUPREMEIND", "PAGEIND", "AUBANK"],
-    "Nifty Smallcap 250": ["CAMS", "KPITTECH", "RAINBOW", "JBCHEPHARM", "CGPOWER", "ANGELONE", "GRAVITA", "SONATSOFTW", "ROUTE", "ELECON"],
+    "Nifty 50": ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "BHARTIARTL", "ITC", "LT", "SBIN", "HINDUNILVR"],
+    "Nifty Midcap": ["PERSISTENT", "FEDERALBNK", "INDHOTEL", "POLYCAB", "COFORGE", "MFSL", "ASTRAL", "SUPREMEIND", "PAGEIND", "AUBANK"],
+}
+
+# Index-overview cards (NIFTY 50 / SENSEX / NIFTY BANK / NIFTY MIDCAP) map to
+# a SECTOR_STOCKS entry for their "click to see stocks" popup. Sensex shares
+# the Nifty 50 large-cap basket since the two largely overlap.
+INDEX_OVERVIEW_STOCK_KEY = {
+    "NIFTY 50": "Nifty 50",
+    "SENSEX": "Nifty 50",
+    "NIFTY BANK": "Bank",
+    "NIFTY MIDCAP": "Nifty Midcap",
 }
 
 TICKER_SYMBOLS = {
@@ -1206,8 +1313,6 @@ def market_heatmap():
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(fetch_index_sector, sector, sym) for sector, sym in SECTOR_INDICES.items()]
         futures.append(executor.submit(fetch_defence_sector))
-        for sector, sym in HEATMAP_INDEX_TICKERS.items():
-            futures.append(executor.submit(fetch_index_sector, sector, sym))
 
         for future in as_completed(futures, timeout=20):
             try:
@@ -1215,8 +1320,8 @@ def market_heatmap():
             except Exception:
                 pass
 
-    # Keep a stable, sensible ordering: original sectors, then Defence, then broad indices
-    order = list(SECTOR_INDICES.keys()) + ["Defence"] + list(HEATMAP_INDEX_TICKERS.keys())
+    # Keep a stable, sensible ordering: original sectors, then Defence
+    order = list(SECTOR_INDICES.keys()) + ["Defence"]
     out.sort(key=lambda s: order.index(s["sector"]) if s["sector"] in order else 999)
 
     return jsonify({"sectors": out})
