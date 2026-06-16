@@ -777,13 +777,24 @@ def fetch_yahoo_finance_news(yf_symbol: str, limit: int = 5) -> list:
     return items[:limit]
 
 
-def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "when:7d"):
+def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "7d"):
     """Fetch and parse Google News RSS for a query. No API key required.
 
-    Restricts results to the last 7 days (Google News' `when:` search operator)
-    and sorts by actual publish date so the freshest stories appear first.
+    Uses the `after:YYYY-MM-DD` operator (more reliable than `when:Nd`) to
+    force Google to return results published after a specific date.
+    `recency` accepts "7d", "14d", "30d", or None (no date filter).
+    Sorts by actual publish date so the freshest stories appear first.
     """
-    full_query = f"{query} {recency}" if recency else query
+    from datetime import date as _date
+    recency_filter = ""
+    if recency:
+        try:
+            days = int(recency.rstrip("d"))
+            cutoff = (_date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+            recency_filter = f" after:{cutoff}"
+        except Exception:
+            recency_filter = ""
+    full_query = query + recency_filter
     url = f"https://news.google.com/rss/search?q={requests.utils.quote(full_query)}&hl=en-IN&gl=IN&ceid=IN:en"
     items = []
     try:
@@ -819,11 +830,9 @@ def fetch_google_news_rss(query: str, limit: int = 3, recency: str = "when:7d"):
         items = items[:limit]
 
         # If the recency filter returned too few/no results, progressively
-        # widen the window (7d -> 14d -> 30d) before giving up entirely -
-        # this avoids jumping straight to fully unrestricted search (which
-        # can surface month(s)-old, often irrelevant results).
+        # widen the window (7d -> 14d -> 30d) before giving up entirely.
         if not items and recency:
-            next_recency = {"when:7d": "when:14d", "when:14d": "when:30d", "when:30d": None}.get(recency)
+            next_recency = {"7d": "14d", "14d": "30d", "30d": None}.get(recency)
             return fetch_google_news_rss(query, limit=limit, recency=next_recency)
 
     except Exception as e:
@@ -1235,19 +1244,22 @@ def _df_row(df, *names):
 
 
 @app.route("/api/global-stock/<path:symbol>")
-@cache.cached(query_string=True, timeout=300)
+@cache.cached(timeout=300)
 def global_stock_data(symbol):
     """Full research snapshot for a global (non-NSE) stock.
     Returns price in the stock's native currency, key fundamentals.
     Uses fast_info first, falls back to history download for exchanges
     (like TWO, TSE, LSE) where fast_info may fail."""
+    import traceback
     try:
         import yfinance as _yf
 
         t = yf_ticker(symbol)
         info = {}
         try:
-            info = t.info or {}
+            raw_info = t.info
+            if isinstance(raw_info, dict):
+                info = raw_info
         except Exception:
             pass
 
@@ -1382,7 +1394,9 @@ def global_stock_data(symbol):
             "is_global":       True,
         })
     except Exception as e:
-        return jsonify({"error": f"Could not fetch data for '{symbol}': {e}"})
+        tb = traceback.format_exc()
+        print(f"global_stock_data ERROR for {symbol}: {e}\n{tb}")
+        return jsonify({"error": f"Data unavailable for {symbol}: {str(e)}"})
 
 
 
@@ -2488,14 +2502,15 @@ def exchange_rates():
         return jsonify({"error": f"Failed to fetch exchange rates: {e}"})
 
 
+_NEWS_YEAR = datetime.now().year
 NEWS_CATEGORY_QUERIES = {
-    "geo": "India trade exports imports geopolitics economy foreign policy",
-    "policy": "India government policy RBI SEBI budget regulatory ministry",
-    "business": "India company earnings results corporate NSE BSE quarterly",
-    "tax": "India income tax ITR GST CBDT budget Nirmala Sitharaman",
-    "market": "India stock market Nifty Sensex shares investors rally",
-    "inflation": "India inflation CPI RBI food prices economy",
-    "macro": "India GDP economy growth RBI IIP PMI industrial",
+    "geo":       f"India trade exports imports geopolitics economy {_NEWS_YEAR}",
+    "policy":    f"India government policy RBI SEBI budget regulatory {_NEWS_YEAR}",
+    "business":  f"India company earnings results corporate NSE BSE {_NEWS_YEAR}",
+    "tax":       f"India income tax ITR GST CBDT budget Nirmala Sitharaman {_NEWS_YEAR}",
+    "market":    f"India stock market Nifty Sensex BSE NSE rally {_NEWS_YEAR}",
+    "inflation": f"India CPI WPI inflation RBI food prices {_NEWS_YEAR}",
+    "macro":     f"India GDP economy growth RBI IIP PMI {_NEWS_YEAR}",
 }
 
 NEWS_CATEGORY_TOPIC_HINTS = {
@@ -2535,10 +2550,12 @@ def news_by_category(category):
         items = []
 
     # Supplement market/business news with Yahoo Finance's own feed for the
-    # major indices - often fresher than search-based results, and free.
+    # major indices - often same-day fresh. Yahoo items go FIRST so they
+    # surface before the search-based results.
     if category in ("market", "business"):
-        for idx_symbol in ("^NSEI", "^BSESN"):
-            items.extend(fetch_yahoo_finance_news(idx_symbol, limit=4))
+        yahoo_fresh = fetch_yahoo_finance_news("^NSEI", limit=5)
+        yahoo_fresh += fetch_yahoo_finance_news("^BSESN", limit=3)
+        items = yahoo_fresh + items  # Yahoo first (freshest)
 
         seen = set()
         deduped = []
@@ -2590,7 +2607,7 @@ def news_by_category(category):
         return jsonify(err_resp)
 
     response = {"category": category, "news": items}
-    cache.set(cache_key, response, timeout=3600)
+    cache.set(cache_key, response, timeout=1800)
     return jsonify(response)
 
 

@@ -39,6 +39,7 @@
 html, body {
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text-primary);
   font-family: var(--font-body);
@@ -291,7 +292,7 @@ a:hover { text-decoration: underline; }
 
 .page-title {
   font-family: var(--font-data);
-  font-size: 1.7rem;
+  font-size: clamp(1.2rem, 3.5vw, 1.7rem);
   font-weight: 700;
   margin: 0 0 4px;
 }
@@ -328,7 +329,7 @@ a:hover { text-decoration: underline; }
 
 .card-title {
   font-family: var(--font-data);
-  font-size: 1rem;
+  font-size: clamp(0.88rem, 2.5vw, 1rem);
   font-weight: 600;
   margin: 0 0 14px;
 }
@@ -420,12 +421,12 @@ a:hover { text-decoration: underline; }
   flex-shrink: 0;
 }
 .company-meta { flex: 1; min-width: 220px; }
-.company-name { font-family: var(--font-data); font-size: 1.4rem; font-weight: 700; margin: 0; }
+.company-name { font-family: var(--font-data); font-size: clamp(1.1rem, 3.5vw, 1.4rem); font-weight: 700; margin: 0; }
 .company-sub { color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; }
 .company-sub span { margin-right: 14px; }
 
 .price-block { text-align: right; }
-.price-now { font-family: var(--font-data); font-size: 1.8rem; font-weight: 700; }
+.price-now { font-family: var(--font-data); font-size: clamp(1.2rem, 4vw, 1.8rem); font-weight: 700; }
 .price-change { font-family: var(--font-data); font-size: 0.95rem; font-weight: 600; margin-top: 2px; }
 .price-change.up { color: var(--positive); }
 .price-change.down { color: var(--negative); }
@@ -1115,4 +1116,348 @@ a:hover { text-decoration: underline; }
 }
 @media (max-width: 480px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ============================================================
+   FinanceIQ — Comprehensive Mobile Responsive Overrides
+   Breakpoints: 1024px | 768px | 480px | 375px | 320px
+   All fixes layered after base styles so cascade works correctly.
+   Desktop (1280px+) appearance is fully preserved.
+   ============================================================ */
+
+/* ===== Global: fluid containers, scrollable tables, responsive canvas ===== */
+.content { box-sizing: border-box; width: 100%; max-width: 1400px; }
+.app-shell { min-width: 0; }
+.topbar { box-sizing: border-box; }
+.topbar-search { min-width: 0; box-sizing: border-box; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+canvas { max-width: 100%; }
+.history-chart-wrap { width: 100%; overflow: hidden; }
+.spark-wrap { width: 100%; }
+.card { box-sizing: border-box; width: 100%; }
+
+/* ======================== @1024px — Tablet Landscape ======================== */
+@media (max-width: 1024px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .news-grid { grid-template-columns: repeat(2, 1fr); }
+  .pros-cons-grid { grid-template-columns: 1fr; }
+  .heatmap-grid { grid-template-columns: repeat(3, 1fr); }
+  .flags-grid { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ======================== @768px — Tablet Portrait ======================== */
+@media (max-width: 768px) {
+  /* Topbar */
+  .topbar-search { max-width: none; flex: 1; min-width: 0; }
+  .topbar-search input::placeholder { font-size: 0.8rem; }
+  .hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .topbar-right .icon-btn { min-width: 44px; min-height: 44px; }
+
+  /* Sidebar off-canvas */
+  .sidebar {
+    position: fixed;
+    left: -260px;
+    top: var(--topbar-height);
+    height: calc(100vh - var(--topbar-height));
+    z-index: 180;
+    transition: left var(--transition);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+  }
+  .sidebar.open { left: 0; }
+
+  /* Content area */
+  .content { padding: 18px 16px 90px; }
+
+  /* Grid corrections — the existing 860px rule collapses all grids to 1 col;
+     override here so grid-2 stays 2 cols at tablet, grid-3/4 become 2 cols */
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .heatmap-grid { grid-template-columns: repeat(2, 1fr); }
+  .news-grid { grid-template-columns: 1fr; }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Bottom nav */
+  .bottom-nav { display: flex; }
+  .bottom-nav-item { min-height: 44px; padding: 4px 0; flex: 1; }
+
+  /* Stock report card */
+  .company-header { flex-direction: column; align-items: flex-start; }
+  .price-block { text-align: left; }
+  .score-row { grid-template-columns: 100px 1fr 50px; }
+
+  /* Tables */
+  .data-table { font-size: 0.82rem; }
+  .data-table th, .data-table td { padding: 8px 10px; }
+
+  /* Period toggle — wrap so they don't overflow */
+  .history-period-toggle { flex-wrap: wrap; gap: 6px; }
+  .period-btn { min-height: 40px; }
+
+  /* Ticker */
+  .ticker-track { font-size: 0.8rem; }
+
+  /* Modal */
+  .modal-overlay { padding: 12px; }
+  .modal-box { max-height: 92vh; }
+  .modal-close { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+
+  /* Settings panel */
+  .settings-panel { max-width: 100vw; }
+
+  /* Mutual fund table */
+  .mf-table { font-size: 0.8rem; }
+  .mf-table th, .mf-table td { padding: 8px 6px; }
+
+  /* Heatmap cells — minimum touch target */
+  .heatmap-cell { min-height: 48px; }
+
+  /* Global index cards */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ======================== @480px — Large Mobile ======================== */
+@media (max-width: 480px) {
+  /* Topbar */
+  .topbar { gap: 8px; padding: 0 10px; }
+  .brand-name { display: none; }
+  .topbar-search { min-width: 0; flex: 1; height: 38px; }
+  .topbar-search input { font-size: 0.82rem; min-width: 0; }
+  .search-btn { padding: 5px 10px; font-size: 0.78rem; min-height: 36px; }
+
+  /* Content */
+  .content { padding: 14px 10px 90px; }
+
+  /* All main grids collapse to single column on mobile */
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+
+  /* Exceptions: keep 2-col for dense data that fits */
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .heatmap-grid { grid-template-columns: repeat(2, 1fr); }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Heatmap cells */
+  .heatmap-cell { min-height: 48px; padding: 12px 6px; font-size: 0.82rem; }
+
+  /* Cards */
+  .card { padding: 14px; }
+
+  /* Tables — compact on mobile */
+  .data-table { font-size: 0.78rem; }
+  .data-table th, .data-table td { padding: 6px 8px; }
+  .financials-table { font-size: 0.75rem; }
+  .financials-table th, .financials-table td { font-size: 0.75rem; padding: 5px 6px; }
+  .mf-table { font-size: 0.78rem; }
+  .mf-table th, .mf-table td { padding: 6px 5px; }
+
+  /* Score row — tighter on small screens */
+  .score-row { grid-template-columns: 90px 1fr 46px; gap: 8px; }
+  .score-bar-track { height: 10px; }
+
+  /* Fun fact bar */
+  .fun-fact-bar { font-size: clamp(0.75rem, 2vw, 0.85rem); padding: 8px 12px; }
+  .fun-fact-text { font-size: clamp(0.75rem, 2vw, 0.85rem); }
+
+  /* Section fun facts */
+  .section-fun-fact { padding: 12px 14px; }
+  .section-fun-fact-text { font-size: 0.84rem; }
+
+  /* Modal — full-screen on mobile */
+  .modal-overlay { padding: 0; align-items: flex-start; }
+  .modal-box {
+    max-width: 100%;
+    width: 100%;
+    max-height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    margin: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal-close { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+  .modal-title { font-size: clamp(1rem, 4vw, 1.3rem); padding-right: 50px; }
+  .modal-subtitle { font-size: 0.84rem; }
+
+  /* IPO flags grid */
+  .flags-grid { grid-template-columns: 1fr; }
+
+  /* Ticker text size */
+  .ticker-track { font-size: 0.78rem; gap: 20px; }
+
+  /* Period toggle buttons */
+  .history-period-toggle { flex-wrap: wrap; gap: 6px; }
+  .period-btn { padding: 5px 10px; font-size: 0.78rem; min-height: 40px; }
+
+  /* News grid */
+  .news-grid { grid-template-columns: 1fr; }
+  .news-card { padding: 12px; }
+  .news-card .news-title { font-size: 0.88rem; }
+
+  /* Pros/cons grid */
+  .pros-cons-grid { grid-template-columns: 1fr; }
+
+  /* Commodity section */
+  .commodity-hilo { font-size: 0.72rem; }
+  .commodity-price { font-size: clamp(1.1rem, 4vw, 1.3rem); }
+
+  /* Calculator inputs and results */
+  .calc-result { font-size: 0.88rem; padding: 12px 14px; }
+  .calc-row label { font-size: 0.8rem; }
+  .calc-row input { font-size: 0.9rem; padding: 8px 10px; }
+
+  /* Currency converter — stack vertically */
+  .currency-row { flex-direction: column; align-items: stretch; }
+  .currency-select { max-width: none; }
+
+  /* Compare search — stack vertically */
+  .compare-search-row { flex-direction: column; }
+
+  /* Touch targets: all interactive elements ≥ 44px */
+  .search-btn, .primary-btn { min-height: 44px; }
+  .theme-btn { min-height: 44px; }
+  .icon-btn { min-width: 44px; min-height: 44px; }
+  .compare-btn { min-height: 40px; }
+  .bottom-nav-item { min-height: 44px; }
+
+  /* Mover rows */
+  .mover-row { font-size: 0.82rem; padding: 7px 8px; }
+
+  /* Card notes */
+  .card-note { font-size: 0.8rem; }
+
+  /* Settings panel — full width on mobile */
+  .settings-panel { width: 100vw; max-width: 100vw; }
+
+  /* AI summary */
+  .ai-summary { font-size: 0.88rem; padding: 12px 14px; }
+
+  /* Page subtitle */
+  .page-subtitle { font-size: 0.85rem; margin-bottom: 16px; }
+
+  /* Metric boxes in stock report */
+  .metric-value { font-size: 1rem; }
+  .metric-label { font-size: 0.74rem; }
+  .metric-box { padding: 10px 12px; }
+
+  /* Company sub info — wrap on mobile */
+  .company-sub { display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.82rem; }
+  .company-sub span { margin-right: 0; }
+}
+
+/* ======================== @375px — Standard Mobile ======================== */
+@media (max-width: 375px) {
+  .topbar { padding: 0 8px; gap: 6px; }
+  .content { padding: 12px 8px 90px; }
+  .card { padding: 12px; }
+
+  .score-row { grid-template-columns: 80px 1fr 44px; gap: 6px; }
+  .score-label { font-size: 0.8rem; }
+  .score-value { font-size: 0.82rem; }
+
+  .data-table { font-size: 0.74rem; }
+  .data-table th, .data-table td { padding: 5px 6px; }
+
+  .heatmap-cell { font-size: 0.75rem; padding: 10px 4px; }
+
+  .metric-value { font-size: 0.95rem; }
+  .metric-label { font-size: 0.72rem; }
+
+  .commodity-hilo { font-size: 0.68rem; }
+  .commodity-name { font-size: 0.88rem; }
+
+  .page-subtitle { font-size: 0.82rem; }
+
+  .bottom-nav-item { font-size: 0.62rem; }
+  .bottom-nav-item span { font-size: 1.1rem; }
+
+  .mover-row { font-size: 0.78rem; }
+
+  .topbar-search { height: 36px; }
+  .search-btn { font-size: 0.74rem; padding: 4px 8px; }
+
+  .section-fun-fact { padding: 10px 12px; }
+
+  .card-note { font-size: 0.78rem; }
+}
+
+/* ======================== @320px — Small Mobile ======================== */
+@media (max-width: 320px) {
+  .topbar { padding: 0 6px; gap: 4px; }
+  .content { padding: 10px 6px 90px; }
+  .card { padding: 10px; }
+  .grid { gap: 12px; }
+
+  .score-row { grid-template-columns: 70px 1fr 40px; gap: 4px; }
+  .score-label { font-size: 0.75rem; }
+
+  .data-table { font-size: 0.7rem; }
+  .data-table th, .data-table td { padding: 4px 5px; }
+
+  .brand-mark { width: 26px; height: 26px; font-size: 0.85rem; }
+
+  .search-btn { padding: 4px 7px; font-size: 0.72rem; }
+
+  .ticker-track { font-size: 0.72rem; gap: 16px; }
+
+  .heatmap-cell { font-size: 0.7rem; }
+
+  .bottom-nav-item { font-size: 0.6rem; }
+  .bottom-nav-item span { font-size: 1rem; }
+
+  .period-btn { padding: 4px 8px; font-size: 0.74rem; }
+
+  .modal-title { font-size: 1rem; }
+
+  .card-note { font-size: 0.76rem; }
+
+  .section-fun-fact { padding: 8px 10px; }
+
+  .page-subtitle { font-size: 0.8rem; }
+
+  .mover-row { padding: 6px 6px; font-size: 0.75rem; }
+}
+
+/* ======================== TAX SLABS GRID ======================== */
+.tax-slabs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+.tax-slab-col {
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+}
+.tax-slab-header {
+  font-family: var(--font-data);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.tax-slab-header.new-regime { background: rgba(99,102,241,0.2); color: var(--primary-light); }
+.tax-slab-header.old-regime { background: rgba(245,158,11,0.15); color: #F59E0B; }
+.tax-slab-header.senior     { background: rgba(16,185,129,0.15); color: #10B981; }
+.tax-table { font-size: 0.8rem; width: 100%; }
+.tax-table th, .tax-table td { padding: 6px 8px; }
+.tax-note { font-size: 0.75rem; color: var(--text-muted); margin-top: 8px; font-style: italic; }
+
+@media (max-width: 768px) {
+  .tax-slabs-grid { grid-template-columns: 1fr; }
+}
+@media (min-width: 769px) and (max-width: 1024px) {
+  .tax-slabs-grid { grid-template-columns: repeat(2, 1fr); }
 }

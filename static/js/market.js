@@ -480,6 +480,7 @@ async function openGlobalStockResearch(symbol, indexName) {
     <div id="gsrBody"><div class="skeleton-block" style="min-height:300px;"></div></div>
   `);
 
+  console.log("Fetching global stock:", symbol);
   const data = await Api.getGlobalStock(symbol);
   const title = document.getElementById("gsrTitle");
   const body  = document.getElementById("gsrBody");
@@ -488,9 +489,13 @@ async function openGlobalStockResearch(symbol, indexName) {
   if (data.error) {
     title.textContent = symbol;
     body.innerHTML = `
-      <p class="card-note">${data.error}</p>
-      <button class="period-btn" id="gsrBackBtn" style="margin-top:12px;">← Back to ${indexName}</button>`;
-    document.getElementById("gsrBackBtn").onclick = () => openGlobalIndexModal(indexName);
+      <div style="padding:20px;text-align:center;">
+        <div style="color:var(--text-muted);margin-bottom:16px;">⚠️ ${data.error}</div>
+        <button class="period-btn" id="gsrRetryBtn">Retry</button>
+        <button class="period-btn" id="gsrBackBtn2" style="margin-left:8px;">← Back to ${indexName}</button>
+      </div>`;
+    document.getElementById("gsrRetryBtn").onclick = () => openGlobalStockResearch(symbol, indexName);
+    document.getElementById("gsrBackBtn2").onclick = () => openGlobalIndexModal(indexName);
     return;
   }
 

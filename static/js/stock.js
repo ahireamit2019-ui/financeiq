@@ -467,6 +467,7 @@ function renderFinancialsTable(title, rows, periods, fields) {
   if (!periods.length) {
     return `<p class="card-note">${title}: data not available for this stock.</p>`;
   }
+  const isBalanceSheet = title.includes("Balance Sheet");
   return `
     <div class="financials-block">
       <h4 class="financials-subtitle">${title}</h4>
@@ -482,12 +483,19 @@ function renderFinancialsTable(title, rows, periods, fields) {
                 ${periods.map((p) => {
                   const row = rows.find((r) => r.period === p);
                   const val = row ? row[key] : null;
-                  return `<td>${val !== null && val !== undefined ? formatCrore(val) : "—"}</td>`;
+                  if (val === null || val === undefined) return `<td>—</td>`;
+                  const formatted = formatCrore(val);
+                  const hasLCr = formatted.includes("L Cr");
+                  const tip = hasLCr
+                    ? ` title="₹${(val / 100000).toFixed(2)} Lakh Crore ≈ ₹${(val / 100000 / 100).toFixed(2)} Trillion"`
+                    : "";
+                  return `<td${tip}>${formatted}</td>`;
                 }).join("")}
               </tr>`).join("")}
           </tbody>
         </table>
       </div>
+      ${isBalanceSheet ? `<p class="card-note" style="margin-top:6px;">L Cr = Lakh Crore (₹1,00,000 Cr). Large-cap companies like TCS and Reliance routinely show assets in this range. Hover any "L Cr" cell to see the full value.</p>` : ""}
     </div>
   `;
 }

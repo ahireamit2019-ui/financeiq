@@ -373,52 +373,78 @@
       <p class="page-subtitle">Income tax slabs, GST changes and simple ways to save tax.</p>
 
       <div class="card">
-        <h3 class="card-title">Income Tax Slabs — New Regime (FY 2025-26)</h3>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Income Slab</th><th>Tax Rate</th></tr></thead>
-            <tbody>
-              <tr><td>₹0 – ₹4,00,000</td><td>Nil</td></tr>
-              <tr><td>₹4,00,001 – ₹8,00,000</td><td>5%</td></tr>
-              <tr><td>₹8,00,001 – ₹12,00,000</td><td>10%</td></tr>
-              <tr><td>₹12,00,001 – ₹16,00,000</td><td>15%</td></tr>
-              <tr><td>₹16,00,001 – ₹20,00,000</td><td>20%</td></tr>
-              <tr><td>₹20,00,001 – ₹24,00,000</td><td>25%</td></tr>
-              <tr><td>Above ₹24,00,000</td><td>30%</td></tr>
-            </tbody>
-          </table>
+        <h3 class="card-title">Income Tax Slabs — FY 2025-26</h3>
+        <div class="tax-slabs-grid">
+
+          <div class="tax-slab-col">
+            <div class="tax-slab-header new-regime">New Regime</div>
+            <table class="data-table tax-table">
+              <thead><tr><th>Income Slab</th><th>Rate</th></tr></thead>
+              <tbody>
+                <tr><td>₹0 – ₹4L</td><td>Nil</td></tr>
+                <tr><td>₹4L – ₹8L</td><td>5%</td></tr>
+                <tr><td>₹8L – ₹12L</td><td>10%</td></tr>
+                <tr><td>₹12L – ₹16L</td><td>15%</td></tr>
+                <tr><td>₹16L – ₹20L</td><td>20%</td></tr>
+                <tr><td>₹20L – ₹24L</td><td>25%</td></tr>
+                <tr><td>Above ₹24L</td><td>30%</td></tr>
+              </tbody>
+            </table>
+            <p class="tax-note">87A rebate: no tax up to ₹12L income</p>
+          </div>
+
+          <div class="tax-slab-col">
+            <div class="tax-slab-header old-regime">Old Regime</div>
+            <table class="data-table tax-table">
+              <thead><tr><th>Income Slab</th><th>Rate</th></tr></thead>
+              <tbody>
+                <tr><td>₹0 – ₹2.5L</td><td>Nil</td></tr>
+                <tr><td>₹2.5L – ₹5L</td><td>5%</td></tr>
+                <tr><td>₹5L – ₹10L</td><td>20%</td></tr>
+                <tr><td>Above ₹10L</td><td>30%</td></tr>
+              </tbody>
+            </table>
+            <p class="tax-note">Allows 80C, 80D, HRA, home loan deductions</p>
+          </div>
+
+          <div class="tax-slab-col">
+            <div class="tax-slab-header senior">Senior Citizens (Old Regime)</div>
+            <table class="data-table tax-table">
+              <thead><tr><th>Age Group</th><th>Exemption</th></tr></thead>
+              <tbody>
+                <tr><td>60–80 yrs</td><td>₹3L free, then 5%/20%/30%</td></tr>
+                <tr><td>80+ yrs</td><td>₹5L free, then 20%/30%</td></tr>
+              </tbody>
+            </table>
+            <p class="tax-note">Age benefits not available under new regime</p>
+          </div>
+
         </div>
-        <p class="card-note">A standard deduction and rebate under Section 87A may reduce your effective tax further — check the official income tax portal for your exact liability.</p>
+        <p class="card-note" style="margin-top:12px;">
+          Figures use shorthand: L = lakh (₹1,00,000). New regime is default from FY 2025-26.
+          Check incometax.gov.in for your exact liability.
+        </p>
       </div>
 
-      <div class="card">
-        <h3 class="card-title">Income Tax Slabs — Old Regime (with deductions)</h3>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Income Slab</th><th>Tax Rate</th></tr></thead>
-            <tbody>
-              <tr><td>₹0 – ₹2,50,000</td><td>Nil</td></tr>
-              <tr><td>₹2,50,001 – ₹5,00,000</td><td>5%</td></tr>
-              <tr><td>₹5,00,001 – ₹10,00,000</td><td>20%</td></tr>
-              <tr><td>Above ₹10,00,000</td><td>30%</td></tr>
-            </tbody>
-          </table>
+      <div class="card" style="margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div class="card-title">Quick Tax Comparison</div>
+            <div style="font-size:0.82rem;color:var(--text-muted);">For ₹12 lakh income</div>
+          </div>
+          <div style="display:flex;gap:16px;">
+            <div style="text-align:center;">
+              <div style="font-size:0.72rem;color:var(--primary-light);font-weight:600;">NEW REGIME</div>
+              <div style="font-family:var(--font-data);font-size:1.1rem;font-weight:700;color:var(--positive);">₹0 tax</div>
+              <div style="font-size:0.7rem;color:var(--text-muted);">87A rebate applies</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:0.72rem;color:#F59E0B;font-weight:600;">OLD REGIME</div>
+              <div style="font-family:var(--font-data);font-size:1.1rem;font-weight:700;">₹1,12,500</div>
+              <div style="font-size:0.7rem;color:var(--text-muted);">before deductions</div>
+            </div>
+          </div>
         </div>
-        <p class="card-note">The old regime allows deductions like Section 80C, 80D, HRA and home loan interest (24b), which can lower your taxable income significantly — useful if you have large eligible investments or rent/home loan outgo.</p>
-      </div>
-
-      <div class="card">
-        <h3 class="card-title">Income Tax Slabs — Old Regime (Senior &amp; Super Senior Citizens)</h3>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Age Group</th><th>Basic Exemption Limit</th><th>Above Exemption</th></tr></thead>
-            <tbody>
-              <tr><td>Senior Citizens (60–80 yrs)</td><td>₹3,00,000</td><td>5% / 20% / 30% slabs continue as above, starting from ₹3,00,000</td></tr>
-              <tr><td>Super Senior Citizens (80+ yrs)</td><td>₹5,00,000</td><td>20% from ₹5,00,001–₹10,00,000, 30% above ₹10,00,000</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="card-note">Senior citizens get a higher tax-free threshold under the old regime. These age-based exemptions are not available under the new regime, which uses the same slabs for everyone.</p>
       </div>
 
       <div class="card">

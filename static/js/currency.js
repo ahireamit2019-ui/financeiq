@@ -38,14 +38,14 @@ async function loadCurrencyConverter() {
       <div class="currency-row">
         <input type="number" id="currencyAmount" class="currency-input" value="1" min="0" step="any">
         <select id="currencyFrom" class="currency-select">
-          ${Object.entries(CURRENCY_LABELS).map(([code, label]) => `<option value="${code}" ${code === "INR" ? "selected" : ""}>${label}</option>`).join("")}
+          ${Object.entries(CURRENCY_LABELS).map(([code, label]) => `<option value="${code}" ${code === "USD" ? "selected" : ""}>${label}</option>`).join("")}
         </select>
       </div>
       <button id="currencySwapBtn" class="currency-swap-btn" aria-label="Swap currencies">⇅</button>
       <div class="currency-row">
         <div id="currencyResult" class="currency-result">—</div>
         <select id="currencyTo" class="currency-select">
-          ${Object.entries(CURRENCY_LABELS).map(([code, label]) => `<option value="${code}" ${code === "USD" ? "selected" : ""}>${label}</option>`).join("")}
+          ${Object.entries(CURRENCY_LABELS).map(([code, label]) => `<option value="${code}" ${code === "INR" ? "selected" : ""}>${label}</option>`).join("")}
         </select>
       </div>
       <p class="card-note" id="currencyRateNote"></p>
