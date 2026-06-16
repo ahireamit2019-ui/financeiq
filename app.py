@@ -1240,7 +1240,14 @@ def _df_row(df, *names):
             out = {}
             for col, val in row.items():
                 try:
-                    out[col.strftime("%b %Y")] = None if val is None or (isinstance(val, float) and val != val) else round(float(val) / 1e7, 2)
+                    if hasattr(col, 'strftime'):
+                        period_str = col.strftime("%b %Y")
+                    else:
+                        period_str = str(col)[:8]
+                    if val is None or (hasattr(val, '__float__') and val != val):
+                        out[period_str] = None
+                        continue
+                    out[period_str] = round(float(val) / 1e7, 2)
                 except Exception:
                     continue
             return out
@@ -1406,32 +1413,72 @@ def global_stock_data(symbol):
 
 
 @app.route("/api/stock/<symbol>/financials")
-@cache.cached(timeout=21600)
+@cache.cached(timeout=43200)
 def stock_financials(symbol):
-    """Quarterly P&L (as many recent quarters as Yahoo provides - typically
-    up to ~5) and annual balance sheet (typically up to ~4 years). Yahoo's
-    free data doesn't guarantee a fixed history length, so we return
-    whatever is available rather than a fixed 3y/5y window, and the
-    frontend labels columns by actual period end-dates."""
+    """Quarterly P&L and annual balance sheet. Uses broad row-name aliases
+    and collects periods from all metrics so no quarter is silently dropped."""
     try:
         nse_symbol = resolve_symbol(symbol)
         ticker = yf_ticker(f"{nse_symbol}.NS")
 
         try:
             qf = ticker.quarterly_income_stmt
+            if qf is None or qf.empty:
+                qf = ticker.quarterly_financials
         except Exception:
             qf = None
+
         try:
             bs = ticker.balance_sheet
+            if bs is None or bs.empty:
+                bs = ticker.quarterly_balance_sheet
         except Exception:
             bs = None
 
-        revenue = _df_row(qf, "Total Revenue", "Operating Revenue")
-        net_profit = _df_row(qf, "Net Income", "Net Income Common Stockholders")
-        operating_profit = _df_row(qf, "Operating Income", "EBIT", "Total Operating Income As Reported", "Gross Profit")
-        ebitda = _df_row(qf, "EBITDA", "Normalized EBITDA", "Pretax Income")
+        revenue = _df_row(qf,
+            "Total Revenue",
+            "Operating Revenue",
+            "Revenue",
+            "Net Revenue",
+            "Total Net Revenue",
+            "Sales",
+        )
+        operating_profit = _df_row(qf,
+            "Operating Income",
+            "EBIT",
+            "Operating Profit",
+            "Total Operating Income As Reported",
+            "Gross Profit",
+            "Operating Income Or Loss",
+            "Income From Operations",
+        )
+        ebitda = _df_row(qf,
+            "EBITDA",
+            "Normalized EBITDA",
+            "Reconciled Depreciation",
+            "EBIT",
+        )
+        net_profit = _df_row(qf,
+            "Net Income",
+            "Net Income Common Stockholders",
+            "Net Income Including Noncontrolling Interests",
+            "Net Income Continuous Operations",
+            "Pretax Income",
+            "Net Profit",
+            "Profit After Tax",
+        )
 
-        periods = list(revenue.keys()) or list(net_profit.keys())
+        all_periods = set()
+        for d in [revenue, operating_profit, ebitda, net_profit]:
+            all_periods.update(d.keys())
+
+        def parse_period(p):
+            try:
+                return datetime.strptime(p, "%b %Y")
+            except Exception:
+                return datetime.min
+
+        periods = sorted(all_periods, key=parse_period, reverse=True)
         quarterly_pnl = []
         for p in periods:
             quarterly_pnl.append({
@@ -1442,13 +1489,46 @@ def stock_financials(symbol):
                 "net_profit_cr": net_profit.get(p),
             })
 
-        total_assets = _df_row(bs, "Total Assets")
-        total_liabilities = _df_row(bs, "Total Liabilities Net Minority Interest", "Total Liab")
-        total_equity = _df_row(bs, "Stockholders Equity", "Total Equity Gross Minority Interest")
-        total_debt = _df_row(bs, "Total Debt")
-        cash = _df_row(bs, "Cash And Cash Equivalents", "Cash")
+        total_assets = _df_row(bs,
+            "Total Assets",
+            "Assets",
+            "Total Assets Net Minority Interest",
+        )
+        total_liabilities = _df_row(bs,
+            "Total Liabilities Net Minority Interest",
+            "Total Liab",
+            "Total Liabilities",
+            "Liabilities",
+            "Total Liabilities And Stockholders Equity",
+        )
+        total_equity = _df_row(bs,
+            "Stockholders Equity",
+            "Total Equity Gross Minority Interest",
+            "Common Stock Equity",
+            "Total Stockholder Equity",
+            "Shareholders Equity",
+            "Net Tangible Assets",
+        )
+        total_debt = _df_row(bs,
+            "Total Debt",
+            "Long Term Debt",
+            "Total Long Term Debt",
+            "Net Debt",
+            "Short Long Term Debt Total",
+        )
+        cash = _df_row(bs,
+            "Cash And Cash Equivalents",
+            "Cash",
+            "Cash Cash Equivalents And Short Term Investments",
+            "Cash And Short Term Investments",
+            "Cash Equivalents",
+        )
 
-        bs_periods = list(total_assets.keys()) or list(total_equity.keys())
+        bs_all_periods = set()
+        for d in [total_assets, total_liabilities, total_equity, total_debt, cash]:
+            bs_all_periods.update(d.keys())
+
+        bs_periods = sorted(bs_all_periods, key=parse_period, reverse=True)
         balance_sheet = []
         for p in bs_periods:
             balance_sheet.append({
@@ -1468,9 +1548,10 @@ def stock_financials(symbol):
             "quarterly_pnl": quarterly_pnl,
             "balance_sheet": balance_sheet,
             "note": (
-                "Figures in ₹ crore. Showing all periods available from Yahoo Finance "
-                "(typically the most recent 4-5 quarters for P&L and 4 years for the "
-                "balance sheet) - exact history length varies by company."
+                f"Figures in ₹ crore (1 Cr = ₹1,00,00,000). L Cr = Lakh Crore (₹1,00,000 Cr). "
+                f"Showing {len(quarterly_pnl)} quarters of P&L and {len(balance_sheet)} years of "
+                f"balance sheet data available from Yahoo Finance. "
+                f"Some cells show — where data is not reported or not available from the source."
             ),
         })
     except Exception as e:

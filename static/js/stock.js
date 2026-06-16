@@ -484,10 +484,12 @@ function renderFinancialsTable(title, rows, periods, fields) {
                   const row = rows.find((r) => r.period === p);
                   const val = row ? row[key] : null;
                   if (val === null || val === undefined) return `<td>—</td>`;
-                  const formatted = formatCrore(val);
+                  const n = parseFloat(val);
+                  if (isNaN(n)) return `<td>—</td>`;
+                  const formatted = formatCrore(n);
                   const hasLCr = formatted.includes("L Cr");
                   const tip = hasLCr
-                    ? ` title="₹${(val / 100000).toFixed(2)} Lakh Crore ≈ ₹${(val / 100000 / 100).toFixed(2)} Trillion"`
+                    ? ` title="₹${(n / 100000).toFixed(2)} Lakh Crore ≈ ₹${(n / 100000 / 100).toFixed(2)} Trillion"`
                     : "";
                   return `<td${tip}>${formatted}</td>`;
                 }).join("")}

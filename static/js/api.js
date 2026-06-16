@@ -76,12 +76,14 @@ function formatRupee(num, decimals = 2) {
   return `₹${formatIndian(num, decimals)}`;
 }
 
-function formatCrore(num) {
-  if (num === null || num === undefined || isNaN(num)) return "—";
-  if (Math.abs(num) >= 100000) {
-    return `₹${formatIndian(num / 100000, 2)} L Cr`; // lakh crore (≥1 lakh crore)
+function formatCrore(val) {
+  if (val === null || val === undefined) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return "—";
+  if (Math.abs(n) >= 100000) {
+    return `₹${(n / 100000).toFixed(2)} L Cr`;
   }
-  return `₹${formatIndian(num, 2)} Cr`;
+  return `₹${formatIndian(n, 2)} Cr`;
 }
 
 function formatPct(num, decimals = 2) {
