@@ -528,9 +528,9 @@ SECTOR_STOCKS = {
     "Realty": ["DLF", "GODREJPROP", "OBEROIRLTY", "PHOENIXLTD", "PRESTIGE", "BRIGADE", "SOBHA", "LODHA"],
     "Energy": ["RELIANCE", "ONGC", "NTPC", "POWERGRID", "ADANIGREEN", "TATAPOWER", "BPCL", "IOC"],
     "Infra": ["LT", "ADANIPORTS", "IRB", "NBCC", "NCC", "KEC", "RVNL", "PFC"],
-    "Media": ["ZEEL", "SUNTV", "PVRINOX", "NETWORK18", "DISHTV", "SAREGAMA", "NAZARA", "TIPS"],
+    "Media": ["ZEEL", "SUNTV", "PVRINOX", "NETWORK18", "DISHTV", "SAREGAMA", "NAZARA", "TIPSINDLTD"],
     "Defence": ["HAL", "BEL", "BDL", "MAZDOCK", "COCHINSHIP", "SOLARINDS", "BEML", "DATAPATTNS"],
-    "Water": ["WABAG", "CLEAN", "ELGIEQUIP", "THERMAX", "KIRLOSKAR", "JASH", "EPIGRAL", "IONEXCHANG"],
+    "Water": ["WABAG", "CLEAN", "ELGIEQUIP", "THERMAX", "KIRLOSBROS", "JASH", "EPIGRAL", "IONEXCHANG"],
     "Oil & Gas": ["RELIANCE", "ONGC", "BPCL", "IOC", "GAIL", "PETRONET", "OIL", "MRPL"],
     "Consumer Durables": ["VOLTAS", "HAVELLS", "BLUESTARCO", "CROMPTON", "VGUARD", "ORIENTELEC", "SYMPHONY", "AMBER"],
     "Semiconductor": ["DIXON", "KAYNES", "SYRMA", "PGEL", "MOSCHIP", "ASTRA", "ZENTEC", "GRAVITA"],
@@ -558,7 +558,7 @@ TICKER_SYMBOLS = {
     "SENSEX": "^BSESN",
     "NIFTY BANK": "^NSEBANK",
     "NIFTY IT": "^CNXIT",
-    "USD/INR": "INR=X",
+    "USD/INR": "USDINR=X",
     "Gold": "GC=F",
     "Crude Oil": "CL=F",
 }
@@ -935,11 +935,11 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
         f"GENUINELY relevant: it must be real financial/business/economic/policy news "
         + (f"specifically connected to {topic_hint}, " if topic_hint else "specifically connected to India, ")
         + "with a clear angle for an Indian retail investor. "
-        "Reject (return null for) anything that is: a forum/aggregator post (e.g. 'Show HN', "
-        "'Ask HN'), an exam-prep or listicle-style roundup (e.g. 'UPSC Key', 'X things to "
-        "know/watch'), generic global content with no India connection, or news primarily "
-        "about another country (e.g. Nepal, Pakistan, Vietnam, Bangladesh) where India is "
-        "only mentioned in passing. When in doubt, reject rather than force a connection. "
+        "Reject (return null for) ONLY content that is clearly unrelated: forum/aggregator posts "
+        "(e.g. 'Show HN', 'Ask HN'), exam-prep or listicle-style roundups (e.g. 'UPSC Key'), "
+        "or news entirely about another country with zero India connection. "
+        "When in doubt, include the story if it has any relevance to India's economy, markets, "
+        "businesses, or policies — even indirect relevance is fine. "
         f"For every headline you ACCEPT, write an ORIGINAL news brief of approximately "
         f"{word_count} words in your own words. Structure each brief to cover every angle "
         "concisely: (1) what happened - the core event, key numbers, names, or outcome; "
@@ -1146,8 +1146,8 @@ def stock_news(symbol):
         #  1. Yahoo Finance's own news feed for this ticker (often the freshest)
         #  2. NewsAPI (if a key is configured)
         #  3. Google News RSS (no key needed)
-        yahoo_items = fetch_yahoo_finance_news(f"{nse_symbol}.NS", limit=8)
-        err, search_items = fetch_news(f"{company_name} stock India", limit=8)
+        yahoo_items = fetch_yahoo_finance_news(f"{nse_symbol}.NS", limit=12)
+        err, search_items = fetch_news(f"{company_name} stock India", limit=12)
         if err and not yahoo_items:
             return jsonify(err)
 
@@ -1166,7 +1166,7 @@ def stock_news(symbol):
         # Freshest first - keep extra headroom since relevance filtering
         # below may drop a few before we trim to the final display count.
         deduped.sort(key=lambda it: parse_news_date(it.get("published", "")), reverse=True)
-        items = deduped[:10]
+        items = deduped[:15]
 
         items = generate_news_briefs(items, get_anthropic_key(), topic_hint=f"{company_name} (Indian stock)")
         items = items[:6]
@@ -1251,20 +1251,42 @@ def global_stock_data(symbol):
         except Exception:
             pass
 
-        # --- Price: try fast_info first, then history fallback ---
+        # --- Price: try fast_info first (each field individually), then history fallback ---
         price, prev, day_high, day_low, year_high, year_low = None, None, None, None, None, None
         try:
             fi = t.fast_info
-            price     = fi.get("lastPrice")
-            prev      = fi.get("previousClose")
-            day_high  = fi.get("dayHigh")
-            day_low   = fi.get("dayLow")
-            year_high = fi.get("yearHigh")
-            year_low  = fi.get("yearLow")
+            try: price     = fi.get("lastPrice")
+            except Exception: pass
+            try: prev      = fi.get("previousClose")
+            except Exception: pass
+            try: day_high  = fi.get("dayHigh")
+            except Exception: pass
+            try: day_low   = fi.get("dayLow")
+            except Exception: pass
+            try: year_high = fi.get("yearHigh") or fi.get("fiftyTwoWeekHigh")
+            except Exception: pass
+            try: year_low  = fi.get("yearLow") or fi.get("fiftyTwoWeekLow")
+            except Exception: pass
         except Exception:
             pass
 
-        # History fallback for day price + change
+        # History fallback for day price + change (ticker.history — handles non-US exchanges)
+        if not price:
+            try:
+                hist5 = t.history(period="5d", interval="1d")
+                closes5 = hist5["Close"].dropna()
+                if not closes5.empty:
+                    price = float(closes5.iloc[-1])
+                    if len(closes5) >= 2:
+                        prev = float(closes5.iloc[-2])
+                    try: day_high = float(hist5["High"].dropna().iloc[-1])
+                    except Exception: pass
+                    try: day_low  = float(hist5["Low"].dropna().iloc[-1])
+                    except Exception: pass
+            except Exception:
+                pass
+
+        # Final fallback for day price via yf.download
         if not price:
             try:
                 df5 = _yf.download(symbol, period="5d", interval="1d",
@@ -1387,8 +1409,8 @@ def stock_financials(symbol):
 
         revenue = _df_row(qf, "Total Revenue", "Operating Revenue")
         net_profit = _df_row(qf, "Net Income", "Net Income Common Stockholders")
-        operating_profit = _df_row(qf, "Operating Income", "EBIT")
-        ebitda = _df_row(qf, "EBITDA", "Normalized EBITDA")
+        operating_profit = _df_row(qf, "Operating Income", "EBIT", "Total Operating Income As Reported", "Gross Profit")
+        ebitda = _df_row(qf, "EBITDA", "Normalized EBITDA", "Pretax Income")
 
         periods = list(revenue.keys()) or list(net_profit.keys())
         quarterly_pnl = []
@@ -1514,6 +1536,14 @@ def market_ticker():
                 price = round(price, 2)
         except Exception:
             pass
+
+        # Sanity check: INR=X returns ~0.012 (inverted); USDINR=X should give ~83.
+        # Guard against any residual inversion (e.g. if yfinance internally aliases).
+        if label == "USD/INR" and price is not None and price < 10:
+            try:
+                price = round(1.0 / price, 2) if price else None
+            except Exception:
+                price = None
 
         # Finnhub fallback for indices/forex if Yahoo failed
         if price is None and label in FINNHUB_TICKER_MAP:
@@ -1741,7 +1771,7 @@ def sector_stocks(key):
         return jsonify({"error": f"Unknown sector '{key}'."})
 
     def fetch_stock(symbol):
-        # Try fast_info first
+        # Method 1: fast_info (fastest path)
         try:
             fi = yf_ticker(f"{symbol}.NS").fast_info
             price = fi.get("lastPrice")
@@ -1751,7 +1781,21 @@ def sector_stocks(key):
                 return {"symbol": symbol, "price": round(price, 2), "change_pct": change_pct}
         except Exception:
             pass
-        # Fallback: history download
+        # Method 2: ticker.history() — uses yfinance session, better for some NSE symbols
+        try:
+            t = yf_ticker(f"{symbol}.NS")
+            hist = t.history(period="5d", interval="1d")
+            closes = hist["Close"].dropna()
+            if len(closes) >= 1:
+                last = float(closes.iloc[-1])
+                change_pct = None
+                if len(closes) >= 2:
+                    prev = float(closes.iloc[-2])
+                    change_pct = round((last - prev) / prev * 100, 2)
+                return {"symbol": symbol, "price": round(last, 2), "change_pct": change_pct}
+        except Exception:
+            pass
+        # Method 3: yf.download bulk endpoint
         try:
             import yfinance as yf
             df = yf.download(f"{symbol}.NS", period="5d", interval="1d",
@@ -1921,7 +1965,7 @@ def global_index_stocks(index_name):
         return jsonify({"error": f"No blue-chip list defined for '{index_name}'."}), 404
 
     def fetch_stock(entry):
-        # Try fast_info first (fastest path)
+        # Method 1: fast_info (fastest path)
         try:
             fi = yf_ticker(entry["symbol"]).fast_info
             price = fi.get("lastPrice")
@@ -1936,7 +1980,26 @@ def global_index_stocks(index_name):
                 }
         except Exception:
             pass
-        # Fallback: history download (handles MOEX and other exchange quirks)
+        # Method 2: ticker.history() — uses yfinance session, more reliable for non-US exchanges
+        try:
+            t = yf_ticker(entry["symbol"])
+            hist = t.history(period="5d", interval="1d")
+            closes = hist["Close"].dropna()
+            if len(closes) >= 1:
+                last = float(closes.iloc[-1])
+                change_pct = None
+                if len(closes) >= 2:
+                    prev = float(closes.iloc[-2])
+                    change_pct = round((last - prev) / prev * 100, 2)
+                return {
+                    "symbol":     entry["symbol"],
+                    "name":       entry["name"],
+                    "price":      round(last, 2),
+                    "change_pct": change_pct,
+                }
+        except Exception:
+            pass
+        # Method 3: yf.download bulk endpoint
         try:
             import yfinance as yf
             df = yf.download(entry["symbol"], period="5d", interval="1d",
@@ -2426,13 +2489,13 @@ def exchange_rates():
 
 
 NEWS_CATEGORY_QUERIES = {
-    "geo": "India trade tariffs exports imports China United States relations economy impact",
-    "policy": "India government Parliament Lok Sabha cabinet policy decision Modi ministry",
-    "business": "Nifty Sensex India company earnings quarterly results corporate",
-    "tax": "India income tax ITR GST CBDT Nirmala Sitharaman budget rules",
-    "market": "Sensex Nifty BSE NSE India stock market today shares",
-    "inflation": "India retail inflation CPI WPI Reserve Bank RBI prices",
-    "macro": "India GDP economy Reserve Bank RBI IIP PMI growth data",
+    "geo": "India trade exports imports geopolitics economy foreign policy",
+    "policy": "India government policy RBI SEBI budget regulatory ministry",
+    "business": "India company earnings results corporate NSE BSE quarterly",
+    "tax": "India income tax ITR GST CBDT budget Nirmala Sitharaman",
+    "market": "India stock market Nifty Sensex shares investors rally",
+    "inflation": "India inflation CPI RBI food prices economy",
+    "macro": "India GDP economy growth RBI IIP PMI industrial",
 }
 
 NEWS_CATEGORY_TOPIC_HINTS = {
@@ -2459,8 +2522,12 @@ NEWS_CATEGORY_CONFIG = {
 
 
 @app.route("/api/news/<category>")
-@cache.cached(timeout=3600)
 def news_by_category(category):
+    cache_key = f"news_cat_{category}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
     query = NEWS_CATEGORY_QUERIES.get(category, f"India {category} news")
     config = NEWS_CATEGORY_CONFIG.get(category, {"limit": 8, "words": 150})
     err, items = fetch_news(query, limit=config["limit"])
@@ -2484,7 +2551,9 @@ def news_by_category(category):
         items = deduped[:config["limit"]]
 
     if not items:
-        return jsonify({"error": "Could not fetch news right now. Please try again shortly."})
+        err_resp = {"error": "Could not fetch news right now. Please try again shortly."}
+        cache.set(cache_key, err_resp, timeout=120)
+        return jsonify(err_resp)
 
     api_key = get_anthropic_key()
 
@@ -2516,9 +2585,13 @@ def news_by_category(category):
     items = items[:config.get("display_limit", config["limit"])]
 
     if not items:
-        return jsonify({"error": "No relevant news found right now. Please try again shortly."})
+        err_resp = {"error": "No relevant news found right now. Please try again shortly."}
+        cache.set(cache_key, err_resp, timeout=120)
+        return jsonify(err_resp)
 
-    return jsonify({"category": category, "news": items})
+    response = {"category": category, "news": items}
+    cache.set(cache_key, response, timeout=3600)
+    return jsonify(response)
 
 
 @app.route("/api/earnings/calendar")
@@ -2563,9 +2636,52 @@ def earnings_calendar():
 # ---------------------------------------------------------------------------
 
 
+def _fetch_nse_ipo_news() -> list:
+    """Try to pull IPO data from NSE India's public API (requires session cookies)."""
+    try:
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://www.nseindia.com/",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-IN,en;q=0.9",
+        })
+        # Warm up cookies
+        session.get("https://www.nseindia.com/market-data/all-upcoming-issues-ipo", timeout=8)
+        resp = session.get("https://www.nseindia.com/api/ipos?category=ipo", timeout=8)
+        if resp.status_code == 200:
+            data = resp.json()
+            rows = data if isinstance(data, list) else data.get("data", [])
+            # Convert NSE rows to our news-item format so the rest of the pipeline works
+            items = []
+            for row in rows[:10]:
+                title = (row.get("issueOpenDate") or "") + " " + (row.get("companyName") or "")
+                desc = (
+                    f"Price Band: {row.get('issuePrice', 'N/A')} | "
+                    f"Issue Size: {row.get('issueSize', 'N/A')} | "
+                    f"Open: {row.get('issueOpenDate', 'N/A')} - Close: {row.get('issueCloseDate', 'N/A')}"
+                )
+                items.append({
+                    "title": (row.get("companyName") or "IPO") + " IPO",
+                    "description": desc,
+                    "source": "NSE India",
+                    "link": "https://www.nseindia.com/market-data/all-upcoming-issues-ipo",
+                    "published": row.get("issueOpenDate") or "",
+                })
+            if items:
+                return items
+    except Exception:
+        pass
+    return []
+
+
 @app.route("/api/ipo/showcase")
-@cache.cached(timeout=10800)
 def ipo_showcase():
+    cache_key = "ipo_showcase_response"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
     api_key = get_anthropic_key()
     note = (
         "Live IPO data (price band, lot size, dates) is extracted from recent "
@@ -2576,19 +2692,27 @@ def ipo_showcase():
     )
 
     if not api_key:
-        return jsonify({"note": note, "ipos": [], "error": "No Anthropic API key configured. Add one in Settings to generate IPO overviews."})
+        err_resp = {"note": note, "ipos": [], "error": "No Anthropic API key configured. Add one in Settings to generate IPO overviews."}
+        cache.set(cache_key, err_resp, timeout=120)
+        return jsonify(err_resp)
 
-    # Step 1: gather real, recent news about open/upcoming IPOs in India
-    err, items = fetch_news(
-        "upcoming IPO India price band lot size mainboard", limit=15
-    )
-    if err or not items:
-        err2, items2 = fetch_news("IPO opens India subscription GMP", limit=15)
-        if not err2:
-            items = items2
+    # Step 1: gather real, recent news about open/upcoming IPOs in India.
+    # Try NSE API first, then multiple Google News queries.
+    items = _fetch_nse_ipo_news()
 
     if not items:
-        return jsonify({"note": note, "ipos": [], "error": "Could not fetch IPO news right now. Try again later."})
+        err, items = fetch_news("upcoming IPO India price band lot size mainboard", limit=15)
+        if err or not items:
+            _, items2 = fetch_news("IPO opens India subscription GMP allotment 2025 2026", limit=15)
+            items = items2 or []
+        if not items:
+            _, items3 = fetch_google_news_rss("India IPO open upcoming 2026", limit=10, recency="when:30d")
+            items = items3 or []
+
+    if not items:
+        err_resp = {"note": note, "ipos": [], "error": "Could not fetch IPO news right now. Try again later."}
+        cache.set(cache_key, err_resp, timeout=120)
+        return jsonify(err_resp)
 
     news_context = [
         {
@@ -2640,9 +2764,13 @@ def ipo_showcase():
     )
 
     if err or not isinstance(result, list):
-        return jsonify({"note": note, "ipos": [], "error": err or "Could not generate IPO data."})
+        err_resp = {"note": note, "ipos": [], "error": err or "Could not generate IPO data."}
+        cache.set(cache_key, err_resp, timeout=120)
+        return jsonify(err_resp)
 
-    return jsonify({"note": note, "ipos": result})
+    response = {"note": note, "ipos": result}
+    cache.set(cache_key, response, timeout=3600)
+    return jsonify(response)
 
 
 # ---------------------------------------------------------------------------

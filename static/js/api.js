@@ -77,8 +77,8 @@ function formatRupee(num, decimals = 2) {
 
 function formatCrore(num) {
   if (num === null || num === undefined || isNaN(num)) return "—";
-  if (Math.abs(num) >= 100) {
-    return `₹${formatIndian(num / 100, 2)} Lc Cr`; // very large numbers (lakh crore)
+  if (Math.abs(num) >= 100000) {
+    return `₹${formatIndian(num / 100000, 2)} L Cr`; // lakh crore (≥1 lakh crore)
   }
   return `₹${formatIndian(num, 2)} Cr`;
 }
