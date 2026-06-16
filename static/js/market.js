@@ -407,12 +407,135 @@ async function loadGlobalIndices() {
   }
 
   el.innerHTML = Object.entries(data).map(([label, v]) => `
-    <div class="card">
-      <h3 class="card-title">${label}</h3>
+    <div class="card global-index-card" data-index="${label}" style="cursor:pointer;"
+         title="Click to see top stocks in ${label}">
+      <div class="global-index-name">${label}</div>
       <div class="price-now">${v.price !== null ? formatIndian(v.price) : "—"}</div>
       <div class="price-change ${pctClass(v.change_pct)}">${arrow(v.change_pct)} ${formatPct(v.change_pct)}</div>
+      <div class="global-index-cta">View top stocks →</div>
     </div>`).join("");
+
+  el.querySelectorAll(".global-index-card").forEach(card => {
+    card.addEventListener("click", () => openGlobalIndexModal(card.dataset.index));
+  });
 }
+
+async function openGlobalIndexModal(indexName) {
+  // Show loading state immediately
+  openModal(`
+    <div class="modal-title">${indexName} — Top Blue-Chip Stocks</div>
+    <div class="modal-subtitle">Live prices. Click any stock for full research.</div>
+    <div id="globalStocksBody" style="margin-top:14px;">
+      <div class="skeleton-block" style="min-height:200px;"></div>
+    </div>
+  `);
+
+  const data = await Api.getGlobalIndexStocks(indexName);
+  const body = document.getElementById("globalStocksBody");
+  if (!body) return;
+
+  if (data.error) {
+    body.innerHTML = `<p class="card-note">${data.error}</p>`;
+    return;
+  }
+
+  const stocks = data.stocks || [];
+  body.innerHTML = `
+    <div class="table-wrap">
+      <table class="data-table global-stocks-table">
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Symbol</th>
+            <th style="text-align:right">Price</th>
+            <th style="text-align:right">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${stocks.map(s => `
+            <tr class="global-stock-row" data-symbol="${s.symbol}" style="cursor:pointer;">
+              <td><strong>${s.name}</strong></td>
+              <td style="font-family:var(--font-data);color:var(--text-muted);">${s.symbol}</td>
+              <td style="text-align:right;font-family:var(--font-data);">${s.price !== null ? s.price.toLocaleString() : "—"}</td>
+              <td style="text-align:right;" class="${pctClass(s.change_pct)}">${arrow(s.change_pct)} ${formatPct(s.change_pct)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="card-note" style="margin-top:10px;">Prices in each stock's native currency. Sorted by today's performance.</p>
+  `;
+
+  body.querySelectorAll(".global-stock-row").forEach(row => {
+    row.addEventListener("click", () => {
+      closeModal();
+      openGlobalStockResearch(row.dataset.symbol, indexName);
+    });
+  });
+}
+
+async function openGlobalStockResearch(symbol, indexName) {
+  openModal(`
+    <div class="modal-title" id="gsrTitle">Loading ${symbol}…</div>
+    <div id="gsrBody"><div class="skeleton-block" style="min-height:300px;"></div></div>
+  `);
+
+  const data = await Api.getGlobalStock(symbol);
+  const title = document.getElementById("gsrTitle");
+  const body  = document.getElementById("gsrBody");
+  if (!title || !body) return;
+
+  if (data.error) {
+    title.textContent = symbol;
+    body.innerHTML = `<p class="card-note">${data.error}</p>`;
+    return;
+  }
+
+  const cur = data.currency_symbol || "$";
+  const fmt = v => v !== null && v !== undefined ? `${cur}${parseFloat(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "—";
+  const fmtPct = v => v !== null && v !== undefined ? `${v > 0 ? "+" : ""}${v.toFixed(2)}%` : "—";
+  const chgClass = (v) => v === null || v === undefined ? "" : v >= 0 ? "positive" : "negative";
+
+  title.innerHTML = `${data.name} <span style="font-size:0.85rem;font-weight:400;color:var(--text-muted);">(${symbol})</span>`;
+
+  body.innerHTML = `
+    <div style="margin-bottom:10px;">
+      <span style="font-size:0.8rem;background:rgba(99,102,241,0.15);padding:3px 8px;border-radius:20px;color:var(--primary-light);">
+        ${indexName} · ${data.exchange || ""}${data.country ? " · " + data.country : ""}
+      </span>
+    </div>
+
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">
+      <span class="price-now">${fmt(data.price)}</span>
+      <span class="${chgClass(data.change_pct)}" style="font-weight:600;">
+        ${arrow(data.change_pct)} ${fmtPct(data.change_pct)} today
+      </span>
+    </div>
+    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">
+      Prev close ${fmt(data.prev_close)} &nbsp;·&nbsp; Day ${fmt(data.day_low)} – ${fmt(data.day_high)}
+      &nbsp;·&nbsp; 52W ${fmt(data.year_low)} – ${fmt(data.year_high)}
+    </div>
+
+    <div class="kpi-grid" style="margin-bottom:16px;">
+      <div class="kpi-box"><div class="kpi-label">Market Cap</div><div class="kpi-value">${data.market_cap_display || "—"}</div></div>
+      <div class="kpi-box"><div class="kpi-label">P/E Ratio</div><div class="kpi-value">${data.pe_ratio !== null ? data.pe_ratio : "—"}</div></div>
+      <div class="kpi-box"><div class="kpi-label">EPS (TTM)</div><div class="kpi-value">${data.eps !== null ? fmt(data.eps) : "—"}</div></div>
+      <div class="kpi-box"><div class="kpi-label">Dividend Yield</div><div class="kpi-value">${data.dividend_yield ? (data.dividend_yield * 100).toFixed(2) + "%" : "—"}</div></div>
+      <div class="kpi-box"><div class="kpi-label">Sector</div><div class="kpi-value" style="font-size:0.8rem;">${data.sector || "—"}</div></div>
+      <div class="kpi-box"><div class="kpi-label">Currency</div><div class="kpi-value">${data.currency || "—"}</div></div>
+    </div>
+
+    ${data.description ? `
+    <div class="card" style="margin-bottom:12px;padding:12px 14px;background:var(--surface-2);">
+      <div style="font-size:0.8rem;color:var(--text-muted);">${data.description}</div>
+    </div>` : ""}
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      ${data.website ? `<a href="${data.website}" target="_blank" rel="noopener" class="period-btn" style="text-decoration:none;">🌐 Website</a>` : ""}
+      <button class="period-btn" onclick="closeModal();openGlobalIndexModal('${indexName}');">← Back to ${indexName}</button>
+    </div>
+  `;
+}
+
 
 /* ============================ 52-WEEK HIGH/LOW ============================ */
 

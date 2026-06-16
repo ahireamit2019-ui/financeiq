@@ -41,6 +41,8 @@ const Api = {
   getHeatmap: () => apiGet(`/api/market/heatmap`),
   getSectorStocks: (key) => apiGet(`/api/market/sector/${encodeURIComponent(key)}/stocks`),
   getGlobalIndices: () => apiGet(`/api/market/global`),
+  getGlobalIndexStocks: (indexName) => apiGet(`/api/market/global/${encodeURIComponent(indexName)}/stocks`),
+  getGlobalStock: (symbol) => apiGet(`/api/global-stock/${encodeURIComponent(symbol)}`),
   get52WeekData: () => apiGet(`/api/market/52week`),
   getMostActive: () => apiGet(`/api/market/active`),
 

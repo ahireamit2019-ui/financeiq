@@ -1063,3 +1063,56 @@ a:hover { text-decoration: underline; }
   font-family: var(--font-body);
   white-space: normal;
 }
+
+/* ============================ GLOBAL MARKETS ============================ */
+.global-index-card {
+  cursor: pointer;
+  transition: border-color 0.18s, transform 0.15s;
+  border: 1px solid var(--border);
+}
+.global-index-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+.global-index-name {
+  font-family: var(--font-data);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+.global-index-cta {
+  font-size: 0.75rem;
+  color: var(--primary-light);
+  margin-top: 8px;
+  font-weight: 500;
+}
+.global-stocks-table tbody tr:hover {
+  background: rgba(99,102,241,0.08);
+}
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.kpi-box {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.kpi-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.kpi-value {
+  font-family: var(--font-data);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}

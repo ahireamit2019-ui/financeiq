@@ -530,6 +530,11 @@ SECTOR_STOCKS = {
     "Infra": ["LT", "ADANIPORTS", "GMRINFRA", "IRB", "NBCC", "NCC", "KEC", "RVNL"],
     "Media": ["ZEEL", "SUNTV", "PVRINOX", "NETWORK18", "DISHTV", "TIPSINDLTD", "SAREGAMA", "NAZARA"],
     "Defence": ["HAL", "BEL", "BDL", "MAZDOCK", "COCHINSHIP", "SOLARINDS", "BEML", "DATAPATTNS"],
+    "Water": ["WABAG", "CLEAN", "ION", "ELGIEQUIP", "THERMAX", "KIRLOSKAR", "JASH", "FLUOROCHEM"],
+    "Oil & Gas": ["RELIANCE", "ONGC", "BPCL", "IOC", "GAIL", "PETRONET", "OIL", "MRPL"],
+    "Consumer Durables": ["VOLTAS", "HAVELLS", "BLUESTARCO", "CROMPTON", "WHIRLPOOL", "VGUARD", "ORIENTELEC", "SYMPHONY"],
+    "Semiconductor": ["DIXON", "KAYNES", "SYRMA", "PGEL", "IDEAFORGE", "RUTTONSHA", "MOSCHIP", "INFIBEAM"],
+    "Telecom": ["BHARTIARTL", "IDEA", "TATACOMM", "RAILTEL", "HFCL", "STLTECH", "INDUS", "TEJAS"],
     "Nifty 50": ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "BHARTIARTL", "ITC", "LT", "SBIN", "HINDUNILVR"],
     "Nifty Midcap": ["PERSISTENT", "FEDERALBNK", "INDHOTEL", "POLYCAB", "COFORGE", "MFSL", "ASTRAL", "SUPREMEIND", "PAGEIND", "AUBANK"],
 }
@@ -1228,7 +1233,79 @@ def _df_row(df, *names):
     return {}
 
 
-@app.route("/api/stock/<symbol>/financials")
+
+@app.route("/api/global-stock/<path:symbol>")
+@cache.cached(query_string=True, timeout=300)
+def global_stock_data(symbol):
+    """Full research snapshot for a global (non-NSE) stock.
+    Returns price in the stock's native currency, key fundamentals,
+    and a short AI-generated analysis, so we can reuse the same
+    stock-research UI with minimal frontend changes."""
+    try:
+        t = yf_ticker(symbol)
+        fi = t.fast_info
+        info = {}
+        try:
+            info = t.info or {}
+        except Exception:
+            pass
+
+        price     = fi.get("lastPrice")
+        prev      = fi.get("previousClose")
+        change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
+        currency   = (info.get("currency") or fi.get("currency") or "USD").upper()
+
+        # Format price with native currency symbol
+        currency_symbols = {"USD": "$", "GBP": "£", "JPY": "¥", "HKD": "HK$",
+                            "CNY": "¥", "CNH": "¥", "EUR": "€", "RUB": "₽"}
+        cur_sym = currency_symbols.get(currency, currency + " ")
+
+        def safe(v, digits=2):
+            try:
+                return round(float(v), digits) if v is not None else None
+            except Exception:
+                return None
+
+        market_cap = safe(info.get("marketCap"))
+        mc_display = None
+        if market_cap:
+            if market_cap >= 1e12:
+                mc_display = f"{cur_sym}{market_cap/1e12:.2f}T"
+            elif market_cap >= 1e9:
+                mc_display = f"{cur_sym}{market_cap/1e9:.2f}B"
+            elif market_cap >= 1e6:
+                mc_display = f"{cur_sym}{market_cap/1e6:.2f}M"
+
+        return jsonify({
+            "symbol":        symbol,
+            "name":          info.get("longName") or info.get("shortName") or symbol,
+            "exchange":      info.get("exchange") or "",
+            "currency":      currency,
+            "currency_symbol": cur_sym,
+            "price":         safe(price),
+            "change_pct":    change_pct,
+            "prev_close":    safe(prev),
+            "day_high":      safe(fi.get("dayHigh")),
+            "day_low":       safe(fi.get("dayLow")),
+            "year_high":     safe(fi.get("yearHigh")),
+            "year_low":      safe(fi.get("yearLow")),
+            "market_cap":    market_cap,
+            "market_cap_display": mc_display,
+            "pe_ratio":      safe(info.get("trailingPE")),
+            "eps":           safe(info.get("trailingEps")),
+            "dividend_yield": safe(info.get("dividendYield"), 4),
+            "sector":        info.get("sector") or "",
+            "industry":      info.get("industry") or "",
+            "description":   (info.get("longBusinessSummary") or "")[:500],
+            "country":       info.get("country") or "",
+            "website":       info.get("website") or "",
+            "is_global":     True,
+        })
+    except Exception as e:
+        return jsonify({"error": f"Could not fetch data for '{symbol}': {e}"})
+
+
+
 @cache.cached(timeout=21600)
 def stock_financials(symbol):
     """Quarterly P&L (as many recent quarters as Yahoo provides - typically
@@ -1557,25 +1634,27 @@ def market_heatmap():
             change_pct = 0
         return {"sector": sector, "change_pct": change_pct, "key": sector}
 
-    def fetch_defence_sector():
-        symbols = SECTOR_STOCKS["Defence"]
+    def fetch_constituent_sector(sector):
+        symbols = SECTOR_STOCKS.get(sector, [])
         with ThreadPoolExecutor(max_workers=8) as executor:
             changes = [c for c in executor.map(quote_change_pct, symbols) if c is not None]
         avg = round(sum(changes) / len(changes), 2) if changes else 0
-        return {"sector": "Defence", "change_pct": avg, "key": "Defence"}
+        return {"sector": sector, "change_pct": avg, "key": sector}
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = [executor.submit(fetch_index_sector, sector, sym) for sector, sym in SECTOR_INDICES.items()]
-        futures.append(executor.submit(fetch_defence_sector))
+    constituent_sectors = ["Defence", "Water", "Oil & Gas", "Consumer Durables", "Semiconductor", "Telecom"]
 
-        for future in as_completed(futures, timeout=20):
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futures = [executor.submit(fetch_index_sector, s, sym) for s, sym in SECTOR_INDICES.items()]
+        for cs in constituent_sectors:
+            futures.append(executor.submit(fetch_constituent_sector, cs))
+
+        for future in as_completed(futures, timeout=25):
             try:
                 out.append(future.result())
             except Exception:
                 pass
 
-    # Keep a stable, sensible ordering: original sectors, then Defence
-    order = list(SECTOR_INDICES.keys()) + ["Defence"]
+    order = list(SECTOR_INDICES.keys()) + constituent_sectors
     out.sort(key=lambda s: order.index(s["sector"]) if s["sector"] in order else 999)
 
     return jsonify({"sectors": out})
@@ -1617,6 +1696,109 @@ GLOBAL_INDICES = {
     "Nikkei 225": "^N225",
     "Hang Seng": "^HSI",
     "Shanghai Composite": "000001.SS",
+    "MOEX (Russia)": "IMOEX.ME",
+}
+
+# Top 10 blue-chip stocks for each global index, by yfinance symbol.
+# These are the most liquid, largest-cap constituents that yfinance can
+# reliably price. Non-US stocks need their exchange suffix.
+GLOBAL_INDEX_STOCKS = {
+    "Dow Jones": [
+        {"symbol": "AAPL",  "name": "Apple"},
+        {"symbol": "MSFT",  "name": "Microsoft"},
+        {"symbol": "UNH",   "name": "UnitedHealth"},
+        {"symbol": "GS",    "name": "Goldman Sachs"},
+        {"symbol": "HD",    "name": "Home Depot"},
+        {"symbol": "CAT",   "name": "Caterpillar"},
+        {"symbol": "MCD",   "name": "McDonald's"},
+        {"symbol": "V",     "name": "Visa"},
+        {"symbol": "AMGN",  "name": "Amgen"},
+        {"symbol": "JPM",   "name": "JPMorgan"},
+    ],
+    "S&P 500": [
+        {"symbol": "AAPL",  "name": "Apple"},
+        {"symbol": "NVDA",  "name": "Nvidia"},
+        {"symbol": "MSFT",  "name": "Microsoft"},
+        {"symbol": "AMZN",  "name": "Amazon"},
+        {"symbol": "META",  "name": "Meta"},
+        {"symbol": "GOOGL", "name": "Alphabet"},
+        {"symbol": "BRK-B", "name": "Berkshire Hathaway"},
+        {"symbol": "TSLA",  "name": "Tesla"},
+        {"symbol": "JPM",   "name": "JPMorgan"},
+        {"symbol": "XOM",   "name": "ExxonMobil"},
+    ],
+    "Nasdaq": [
+        {"symbol": "AAPL",  "name": "Apple"},
+        {"symbol": "NVDA",  "name": "Nvidia"},
+        {"symbol": "MSFT",  "name": "Microsoft"},
+        {"symbol": "AMZN",  "name": "Amazon"},
+        {"symbol": "META",  "name": "Meta"},
+        {"symbol": "GOOGL", "name": "Alphabet"},
+        {"symbol": "TSLA",  "name": "Tesla"},
+        {"symbol": "AVGO",  "name": "Broadcom"},
+        {"symbol": "COST",  "name": "Costco"},
+        {"symbol": "NFLX",  "name": "Netflix"},
+    ],
+    "FTSE 100": [
+        {"symbol": "SHEL.L",  "name": "Shell"},
+        {"symbol": "AZN.L",   "name": "AstraZeneca"},
+        {"symbol": "HSBA.L",  "name": "HSBC"},
+        {"symbol": "ULVR.L",  "name": "Unilever"},
+        {"symbol": "BP.L",    "name": "BP"},
+        {"symbol": "GSK.L",   "name": "GSK"},
+        {"symbol": "RIO.L",   "name": "Rio Tinto"},
+        {"symbol": "BATS.L",  "name": "BAT"},
+        {"symbol": "DGE.L",   "name": "Diageo"},
+        {"symbol": "VOD.L",   "name": "Vodafone"},
+    ],
+    "Nikkei 225": [
+        {"symbol": "7203.T",  "name": "Toyota"},
+        {"symbol": "6758.T",  "name": "Sony"},
+        {"symbol": "6861.T",  "name": "Keyence"},
+        {"symbol": "8306.T",  "name": "Mitsubishi UFJ"},
+        {"symbol": "9432.T",  "name": "NTT"},
+        {"symbol": "6501.T",  "name": "Hitachi"},
+        {"symbol": "7974.T",  "name": "Nintendo"},
+        {"symbol": "4519.T",  "name": "Chugai Pharma"},
+        {"symbol": "6954.T",  "name": "Fanuc"},
+        {"symbol": "9984.T",  "name": "SoftBank"},
+    ],
+    "Hang Seng": [
+        {"symbol": "0700.HK", "name": "Tencent"},
+        {"symbol": "9988.HK", "name": "Alibaba"},
+        {"symbol": "0005.HK", "name": "HSBC HK"},
+        {"symbol": "0941.HK", "name": "China Mobile"},
+        {"symbol": "3690.HK", "name": "Meituan"},
+        {"symbol": "0388.HK", "name": "HK Exchanges"},
+        {"symbol": "2318.HK", "name": "Ping An"},
+        {"symbol": "1299.HK", "name": "AIA Group"},
+        {"symbol": "0016.HK", "name": "Sun Hung Kai"},
+        {"symbol": "9618.HK", "name": "JD.com"},
+    ],
+    "Shanghai Composite": [
+        {"symbol": "601398.SS", "name": "ICBC"},
+        {"symbol": "600519.SS", "name": "Kweichow Moutai"},
+        {"symbol": "601857.SS", "name": "PetroChina"},
+        {"symbol": "601988.SS", "name": "Bank of China"},
+        {"symbol": "600036.SS", "name": "China Merchants Bank"},
+        {"symbol": "601628.SS", "name": "China Life"},
+        {"symbol": "600900.SS", "name": "Yangtze Power"},
+        {"symbol": "601939.SS", "name": "CCB"},
+        {"symbol": "600276.SS", "name": "Hengrui Medicine"},
+        {"symbol": "601088.SS", "name": "China Shenhua"},
+    ],
+    "MOEX (Russia)": [
+        {"symbol": "SBER.ME",  "name": "Sberbank"},
+        {"symbol": "GAZP.ME",  "name": "Gazprom"},
+        {"symbol": "LKOH.ME",  "name": "Lukoil"},
+        {"symbol": "GMKN.ME",  "name": "Norilsk Nickel"},
+        {"symbol": "NVTK.ME",  "name": "Novatek"},
+        {"symbol": "ROSN.ME",  "name": "Rosneft"},
+        {"symbol": "TATN.ME",  "name": "Tatneft"},
+        {"symbol": "MGNT.ME",  "name": "Magnit"},
+        {"symbol": "YNDX.ME",  "name": "Yandex"},
+        {"symbol": "POLY.ME",  "name": "Polymetal"},
+    ],
 }
 
 
@@ -1643,8 +1825,46 @@ def market_global():
     return jsonify(out)
 
 
+@app.route("/api/market/global/<path:index_name>/stocks")
+@cache.cached(timeout=900)
+def global_index_stocks(index_name):
+    """Live price snapshot for the top blue-chip stocks in a given global
+    index, sorted by day-change percentage (best performers first) so users
+    see the index's current momentum leaders."""
+    stocks = GLOBAL_INDEX_STOCKS.get(index_name)
+    if not stocks:
+        return jsonify({"error": f"No blue-chip list defined for '{index_name}'."}), 404
 
-@app.route("/api/market/52week")
+    def fetch_stock(entry):
+        try:
+            fi = yf_ticker(entry["symbol"]).fast_info
+            price = fi.get("lastPrice")
+            prev  = fi.get("previousClose")
+            if not price:
+                return None
+            change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
+            return {
+                "symbol":     entry["symbol"],
+                "name":       entry["name"],
+                "price":      round(float(price), 2),
+                "change_pct": change_pct,
+            }
+        except Exception:
+            return None
+
+    results = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        for r in executor.map(fetch_stock, stocks):
+            if r:
+                results.append(r)
+
+    # Sort best performers first so the "hottest" names are visible at a glance
+    results.sort(key=lambda r: (r["change_pct"] is None, -(r["change_pct"] or 0)))
+
+    return jsonify({"index": index_name, "stocks": results})
+
+
+
 @cache.cached(timeout=1800)
 def market_52week():
     """Scan every stock available on the site and rank by proximity to its
