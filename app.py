@@ -16,11 +16,13 @@ from email.utils import parsedate_to_datetime
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from flask_caching import Cache
+from flask_compress import Compress
 
 import yfinance as yf
 
 app = Flask(__name__)
 CORS(app)
+Compress(app)
 
 cache = Cache(app, config={"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300})
 
@@ -133,6 +135,9 @@ YF_SESSION = TimeoutSession()
 YF_SESSION.headers.update({"User-Agent": "Mozilla/5.0"})
 
 
+from functools import lru_cache
+
+@lru_cache(maxsize=512)
 def yf_ticker(symbol: str) -> "yf.Ticker":
     """Create a yfinance Ticker, letting yfinance manage its own session."""
     return yf.Ticker(symbol)
@@ -970,7 +975,7 @@ def generate_news_briefs(items, api_key, topic_hint="", word_count=150):
     ]
     # Budget enough output tokens for N articles of ~word_count words each
     # (roughly 1.4 tokens/word) plus JSON overhead, capped at a sane max.
-    max_tokens = min(8192, max(2048, int(len(items) * word_count * 1.6) + 512))
+    max_tokens = min(4096, max(2048, int(len(items) * word_count * 1.6) + 512))
 
     result, err = call_claude_haiku(
         system_prompt, json.dumps(headlines), api_key, max_tokens=max_tokens
@@ -1679,7 +1684,7 @@ def market_overview():
                 pass
             return None
 
-        with ThreadPoolExecutor(max_workers=15) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             for r in executor.map(fetch_mover, NIFTY50_SYMBOLS):
                 if r:
                     movers.append(r)
@@ -1736,7 +1741,7 @@ def quote_change_pct(nse_symbol: str) -> float | None:
 
 
 @app.route("/api/market/heatmap")
-@cache.cached(timeout=300)
+@cache.cached(timeout=600)
 def market_heatmap():
     out = []
 
@@ -1759,7 +1764,7 @@ def market_heatmap():
 
     constituent_sectors = ["Defence", "Water", "Oil & Gas", "Consumer Durables", "Semiconductor", "Telecom"]
 
-    with ThreadPoolExecutor(max_workers=12) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         futures = [executor.submit(fetch_index_sector, s, sym) for s, sym in SECTOR_INDICES.items()]
         for cs in constituent_sectors:
             futures.append(executor.submit(fetch_constituent_sector, cs))
@@ -1777,7 +1782,7 @@ def market_heatmap():
 
 
 @app.route("/api/market/sector/<key>/stocks")
-@cache.cached(timeout=300)
+@cache.cached(timeout=600)
 def sector_stocks(key):
     """Representative stock list with live prices for a heatmap cell."""
     symbols = SECTOR_STOCKS.get(key)
@@ -1825,7 +1830,7 @@ def sector_stocks(key):
             pass
         return {"symbol": symbol, "price": None, "change_pct": None}
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         stocks = list(executor.map(fetch_stock, symbols))
 
     return jsonify({"sector": key, "stocks": stocks})
@@ -1946,7 +1951,7 @@ GLOBAL_INDEX_STOCKS = {
 
 
 @app.route("/api/market/global")
-@cache.cached(timeout=600)
+@cache.cached(timeout=900)
 def market_global():
     """Snapshot of major global indices for cross-market context."""
     out = {}
@@ -1969,7 +1974,7 @@ def market_global():
 
 
 @app.route("/api/market/global/<path:index_name>/stocks")
-@cache.cached(timeout=900)
+@cache.cached(timeout=1200)
 def global_index_stocks(index_name):
     """Live price snapshot for the top blue-chip stocks in a given global
     index, sorted by day-change percentage (best performers first) so users
@@ -2036,7 +2041,7 @@ def global_index_stocks(index_name):
         return None
 
     results = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         for r in executor.map(fetch_stock, stocks):
             if r:
                 results.append(r)
@@ -2049,7 +2054,7 @@ def global_index_stocks(index_name):
 
 
 @app.route("/api/market/52week")
-@cache.cached(timeout=1800)
+@cache.cached(timeout=3600)
 def market_52week():
     """Scan every stock available on the site and rank by proximity to its
     52-week high and low. Returns the top 5 closest to each extreme, plus
@@ -2092,7 +2097,7 @@ def market_52week():
         return None
 
     results = []
-    with ThreadPoolExecutor(max_workers=16) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         for r in executor.map(fetch_stock, ALL_WEBSITE_STOCKS):
             if r:
                 results.append(r)
@@ -2400,7 +2405,7 @@ def price_history(label):
 
 
 @app.route("/api/commodities")
-@cache.cached(timeout=300)
+@cache.cached(timeout=600)
 def commodities():
     out = {}
 
@@ -3115,10 +3120,33 @@ def sitemap_xml():
     return (xml, 200, {"Content-Type": "application/xml"})
 
 
+@app.after_request
+def add_cache_headers(response):
+    if request.path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
+
+import threading
+
+def _warmup():
+    import time
+    time.sleep(8)
+    with app.app_context():
+        for path in ["/api/market/ticker", "/api/market/overview",
+                     "/api/market/heatmap", "/api/commodities"]:
+            try:
+                with app.test_client() as c:
+                    c.get(path)
+            except Exception:
+                pass
+
+threading.Thread(target=_warmup, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
