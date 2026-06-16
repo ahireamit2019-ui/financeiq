@@ -756,7 +756,52 @@ async function loadInflationNews() {
 
 /* ============================ TAX UPDATES PAGE ============================ */
 
+async function loadGovtSchemes() {
+  const el = document.getElementById("govtSchemesGrid");
+  if (!el) return;
+
+  const data = await Api.getGovtSchemes();
+  if (data.error || !data.schemes) {
+    el.innerHTML = errorBlock(data.error || "Could not load scheme data.", loadGovtSchemes);
+    el.classList.remove("skeleton-block");
+    return;
+  }
+
+  const rateColor = "#10B981";
+
+  el.classList.remove("skeleton-block");
+  el.innerHTML = data.schemes.map((s, i) => `
+    <div class="govt-scheme-card">
+      <div class="gsc-rank">#${i + 1}</div>
+      <div class="gsc-body">
+        <div class="gsc-top">
+          <div class="gsc-name">${s.name}</div>
+          <div class="gsc-rate" style="color:${rateColor};">${s.rate}</div>
+        </div>
+        <div class="gsc-meta">
+          <span class="gsc-badge">${s.category}</span>
+          <span class="gsc-badge">${s.lock_in} lock-in</span>
+          <span class="gsc-badge">${s.max_invest} max</span>
+          <span class="gsc-badge ${s.tax_benefit.includes("EEE") ? "badge-gold" : ""}">${s.tax_benefit}</span>
+        </div>
+        <div class="gsc-brief">${s.brief}</div>
+        <div class="gsc-footer">
+          <span>👥 ${s.who_for}</span>
+          <span>💰 Payout: ${s.payout}</span>
+          <span>🛡️ ${s.safety}</span>
+        </div>
+      </div>
+    </div>
+  `).join("") + `
+    <p class="card-note" style="margin-top:14px;grid-column:1/-1;">
+      ${data.note} · Last updated: ${data.updated}
+    </p>
+  `;
+}
+
 async function loadTaxPage() {
+  loadGovtSchemes();
+
   const el = document.getElementById("taxNews");
   const data = await Api.getNewsByCategory("tax");
 

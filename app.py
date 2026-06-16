@@ -3120,6 +3120,149 @@ def sitemap_xml():
     return (xml, 200, {"Content-Type": "application/xml"})
 
 
+@app.route("/api/tax/govt-schemes")
+def govt_schemes():
+    """Top 5 highest-return Indian government investment schemes with
+    AI-generated 50-word briefs covering all key aspects. Cached 24h
+    since scheme rates change quarterly not daily."""
+    cached = cache.get("govt_schemes_response")
+    if cached:
+        return jsonify(cached)
+
+    SCHEMES = [
+        {
+            "name": "Senior Citizen Savings Scheme (SCSS)",
+            "rate": "8.2%",
+            "category": "Post Office / Bank",
+            "lock_in": "5 years",
+            "max_invest": "₹30 lakh",
+            "tax_benefit": "80C eligible",
+            "who_for": "Age 60+",
+            "payout": "Quarterly",
+            "safety": "Government Guaranteed",
+            "key_facts": "Highest safe rate. Max ₹30L. Quarterly interest payout. 5-yr lock-in, extendable by 3 yrs. Premature closure allowed with penalty. Section 80C eligible. Interest is taxable."
+        },
+        {
+            "name": "Sukanya Samriddhi Yojana (SSY)",
+            "rate": "8.2%",
+            "category": "Post Office",
+            "lock_in": "Until girl turns 21",
+            "max_invest": "₹1.5 lakh/yr",
+            "tax_benefit": "80C + EEE (fully tax-free)",
+            "who_for": "Parents of girl child under 10",
+            "payout": "At maturity",
+            "safety": "Government Guaranteed",
+            "key_facts": "EEE status — investment, growth, and maturity all tax-free. Only 2 accounts per family. Partial withdrawal at 18 for education. Highest rate with full tax exemption."
+        },
+        {
+            "name": "RBI Floating Rate Savings Bonds 2020",
+            "rate": "8.05%",
+            "category": "RBI / Banks",
+            "lock_in": "7 years",
+            "max_invest": "No limit",
+            "tax_benefit": "None",
+            "who_for": "All residents",
+            "payout": "Semi-annual",
+            "safety": "Sovereign (RBI)",
+            "key_facts": "No investment limit. Rate resets every 6 months — linked to NSC rate plus 0.35%. Semi-annual interest payout. Sovereign guarantee. Not tradeable on exchange. Interest taxable."
+        },
+        {
+            "name": "National Savings Certificate (NSC)",
+            "rate": "7.7%",
+            "category": "Post Office",
+            "lock_in": "5 years",
+            "max_invest": "No limit",
+            "tax_benefit": "80C eligible",
+            "who_for": "All residents",
+            "payout": "At maturity (compounded annually)",
+            "safety": "Government Guaranteed",
+            "key_facts": "No max limit. Interest compounded annually and reinvestment qualifies for 80C each year. Accepted as collateral for loans. Available at all post offices. Simple and reliable."
+        },
+        {
+            "name": "Kisan Vikas Patra (KVP)",
+            "rate": "7.5%",
+            "category": "Post Office",
+            "lock_in": "115 months (~9.6 yrs) to double",
+            "max_invest": "No limit",
+            "tax_benefit": "None",
+            "who_for": "All residents",
+            "payout": "Lump sum at maturity",
+            "safety": "Government Guaranteed",
+            "key_facts": "Money doubles in ~115 months. No max limit. No 80C benefit. Can be encashed after 2.5 years. Transferable between post offices. KYC required above ₹50,000. Interest is taxable."
+        },
+    ]
+
+    api_key = get_anthropic_key()
+    if api_key:
+        system_prompt = (
+            "You are a financial advisor writing for Indian retail investors. "
+            "For each government investment scheme below, write a brief of "
+            "EXACTLY 50 words that covers ALL of these aspects in order: "
+            "(1) current interest rate, (2) who should invest, (3) lock-in period, "
+            "(4) maximum investment limit, (5) tax treatment, (6) one key advantage "
+            "or unique feature that makes it stand out. "
+            "Be specific with numbers. No fluff. Dense, useful, plain English. "
+            "Return ONLY a valid JSON array of 5 strings, one per scheme, same order as input."
+        )
+        scheme_data = [
+            {
+                "name": s["name"],
+                "rate": s["rate"],
+                "lock_in": s["lock_in"],
+                "max_invest": s["max_invest"],
+                "tax_benefit": s["tax_benefit"],
+                "who_for": s["who_for"],
+                "key_facts": s["key_facts"]
+            }
+            for s in SCHEMES
+        ]
+        result, err = call_claude_haiku(
+            system_prompt,
+            json.dumps(scheme_data),
+            api_key,
+            max_tokens=1000
+        )
+        if not err and isinstance(result, list) and len(result) == 5:
+            for i, brief in enumerate(result):
+                if isinstance(brief, str):
+                    SCHEMES[i]["brief"] = brief
+
+    # Fallback briefs if AI fails
+    fallbacks = [
+        "SCSS offers 8.2% — India's highest guaranteed rate. For age 60+. ₹30 lakh maximum. 5-year lock-in with quarterly interest payouts. Section 80C eligible. Premature exit allowed with penalty. Interest is taxable but rate security makes it the top choice for retirees.",
+        "SSY pays 8.2% for girl child accounts — fully tax-free under EEE status. Open for daughters under 10. Maximum ₹1.5 lakh/year. Matures when girl turns 21. Partial withdrawal at 18 for education. No tax on investment, growth, or withdrawal.",
+        "RBI Floating Rate Bonds pay 8.05% — sovereign guarantee, no investment cap. 7-year lock-in. Rate resets every 6 months tied to NSC + 0.35%. Semi-annual interest payouts. No 80C benefit but unlimited investment and maximum safety make it ideal for large surplus funds.",
+        "NSC pays 7.7% compounded annually at all post offices. No maximum limit. 5-year lock-in. 80C deduction eligible each year as reinvested interest qualifies. Accepted as loan collateral. Interest is taxable at maturity but annual compounding boosts effective returns significantly.",
+        "KVP doubles your money in 115 months at 7.5%. No investment limit. Available at all post offices. Can be encashed after 2.5 years. No 80C benefit. KYC mandatory above ₹50,000. Interest is taxable. Best for those wanting a simple lump-sum doubling instrument.",
+    ]
+    for i, s in enumerate(SCHEMES):
+        if not s.get("brief"):
+            s["brief"] = fallbacks[i]
+
+    response = {
+        "schemes": [
+            {
+                "name": s["name"],
+                "rate": s["rate"],
+                "category": s["category"],
+                "lock_in": s["lock_in"],
+                "max_invest": s["max_invest"],
+                "tax_benefit": s["tax_benefit"],
+                "who_for": s["who_for"],
+                "payout": s["payout"],
+                "safety": s["safety"],
+                "brief": s.get("brief", ""),
+            }
+            for s in SCHEMES
+        ],
+        "note": "Interest rates as of Q1 2026. Rates are revised quarterly by Government of India. Verify current rates at indiapost.gov.in or rbi.org.in before investing.",
+        "updated": datetime.now().strftime("%d %b %Y"),
+    }
+
+    cache.set("govt_schemes_response", response, timeout=86400)
+    return jsonify(response)
+
+
 @app.after_request
 def add_cache_headers(response):
     if request.path.startswith('/static/'):

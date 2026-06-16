@@ -59,6 +59,7 @@ const Api = {
   getTopMutualFunds: () => apiGet(`/api/mutualfunds/top`),
   getMutualFundDetail: (schemeCode) => apiGet(`/api/mutualfunds/${encodeURIComponent(schemeCode)}/detail`),
   getPriceHistory: (label, period) => apiGet(`/api/history/${encodeURIComponent(label)}?period=${encodeURIComponent(period || "1y")}`),
+  getGovtSchemes: () => apiGet(`/api/tax/govt-schemes`),
 };
 
 /* ============================================================

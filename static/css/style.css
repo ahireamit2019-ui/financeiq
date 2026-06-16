@@ -1461,3 +1461,89 @@ canvas { max-width: 100%; }
 @media (min-width: 769px) and (max-width: 1024px) {
   .tax-slabs-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+
+/* ============================ GOVT SCHEMES ============================ */
+.govt-schemes-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.govt-scheme-card {
+  display: flex;
+  gap: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: border-color 0.2s;
+}
+.govt-scheme-card:hover { border-color: var(--primary); }
+.gsc-rank {
+  font-family: var(--font-data);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  min-width: 32px;
+  padding-top: 2px;
+}
+.gsc-body { flex: 1; min-width: 0; }
+.gsc-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.gsc-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.gsc-rate {
+  font-family: var(--font-data);
+  font-size: 1.3rem;
+  font-weight: 800;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.gsc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.gsc-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(99,102,241,0.12);
+  color: var(--primary-light);
+  white-space: nowrap;
+}
+.badge-gold {
+  background: rgba(245,158,11,0.15);
+  color: #F59E0B;
+}
+.gsc-brief {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin-bottom: 10px;
+  border-left: 3px solid var(--primary);
+  padding-left: 10px;
+}
+.gsc-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+@media (max-width: 480px) {
+  .govt-scheme-card { flex-direction: column; gap: 8px; }
+  .gsc-rank { font-size: 1rem; }
+  .gsc-rate { font-size: 1.1rem; }
+}
