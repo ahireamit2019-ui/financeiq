@@ -1238,26 +1238,81 @@ def _df_row(df, *names):
 @cache.cached(query_string=True, timeout=300)
 def global_stock_data(symbol):
     """Full research snapshot for a global (non-NSE) stock.
-    Returns price in the stock's native currency, key fundamentals,
-    and a short AI-generated analysis, so we can reuse the same
-    stock-research UI with minimal frontend changes."""
+    Returns price in the stock's native currency, key fundamentals.
+    Uses fast_info first, falls back to history download for exchanges
+    (like TWO, TSE, LSE) where fast_info may fail."""
     try:
+        import yfinance as _yf
+
         t = yf_ticker(symbol)
-        fi = t.fast_info
         info = {}
         try:
             info = t.info or {}
         except Exception:
             pass
 
-        price     = fi.get("lastPrice")
-        prev      = fi.get("previousClose")
-        change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
-        currency   = (info.get("currency") or fi.get("currency") or "USD").upper()
+        # --- Price: try fast_info first, then history fallback ---
+        price, prev, day_high, day_low, year_high, year_low = None, None, None, None, None, None
+        try:
+            fi = t.fast_info
+            price     = fi.get("lastPrice")
+            prev      = fi.get("previousClose")
+            day_high  = fi.get("dayHigh")
+            day_low   = fi.get("dayLow")
+            year_high = fi.get("yearHigh")
+            year_low  = fi.get("yearLow")
+        except Exception:
+            pass
 
-        # Format price with native currency symbol
+        # History fallback for day price + change
+        if not price:
+            try:
+                df5 = _yf.download(symbol, period="5d", interval="1d",
+                                   progress=False, auto_adjust=True)
+                closes = df5["Close"].dropna()
+                if not closes.empty:
+                    price = float(closes.iloc[-1])
+                    if len(closes) >= 2:
+                        prev = float(closes.iloc[-2])
+                    day_high = float(df5["High"].dropna().iloc[-1])
+                    day_low  = float(df5["Low"].dropna().iloc[-1])
+            except Exception:
+                pass
+
+        # 52-week high/low from info or 1y history
+        if not year_high:
+            year_high = info.get("fiftyTwoWeekHigh")
+        if not year_low:
+            year_low = info.get("fiftyTwoWeekLow")
+        if not year_high:
+            try:
+                df1y = _yf.download(symbol, period="1y", interval="1d",
+                                    progress=False, auto_adjust=True)
+                if not df1y.empty:
+                    year_high = float(df1y["High"].dropna().max())
+                    year_low  = float(df1y["Low"].dropna().min())
+            except Exception:
+                pass
+
+        change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
+
+        # Currency detection
+        currency = (info.get("currency") or "").upper()
+        if not currency:
+            # Infer from symbol suffix
+            suffix_currency = {".L": "GBP", ".T": "JPY", ".HK": "HKD",
+                               ".SS": "CNY", ".SZ": "CNY", ".TW": "TWD",
+                               ".TO": "CAD", ".AX": "AUD", ".ME": "RUB"}
+            for sfx, cur in suffix_currency.items():
+                if symbol.upper().endswith(sfx):
+                    currency = cur
+                    break
+            if not currency:
+                currency = "USD"
+
         currency_symbols = {"USD": "$", "GBP": "£", "JPY": "¥", "HKD": "HK$",
-                            "CNY": "¥", "CNH": "¥", "EUR": "€", "RUB": "₽"}
+                            "CNY": "¥", "CNH": "¥", "EUR": "€", "RUB": "₽",
+                            "TWD": "NT$", "CAD": "CA$", "AUD": "A$", "KRW": "₩"}
         cur_sym = currency_symbols.get(currency, currency + " ")
 
         def safe(v, digits=2):
@@ -1276,36 +1331,40 @@ def global_stock_data(symbol):
             elif market_cap >= 1e6:
                 mc_display = f"{cur_sym}{market_cap/1e6:.2f}M"
 
+        if not price:
+            return jsonify({"error": f"Could not fetch price for '{symbol}'. The stock may be delisted or temporarily unavailable."})
+
         return jsonify({
-            "symbol":        symbol,
-            "name":          info.get("longName") or info.get("shortName") or symbol,
-            "exchange":      info.get("exchange") or "",
-            "currency":      currency,
+            "symbol":          symbol,
+            "name":            info.get("longName") or info.get("shortName") or symbol,
+            "exchange":        info.get("exchange") or "",
+            "currency":        currency,
             "currency_symbol": cur_sym,
-            "price":         safe(price),
-            "change_pct":    change_pct,
-            "prev_close":    safe(prev),
-            "day_high":      safe(fi.get("dayHigh")),
-            "day_low":       safe(fi.get("dayLow")),
-            "year_high":     safe(fi.get("yearHigh")),
-            "year_low":      safe(fi.get("yearLow")),
-            "market_cap":    market_cap,
+            "price":           safe(price),
+            "change_pct":      change_pct,
+            "prev_close":      safe(prev),
+            "day_high":        safe(day_high),
+            "day_low":         safe(day_low),
+            "year_high":       safe(year_high),
+            "year_low":        safe(year_low),
+            "market_cap":      market_cap,
             "market_cap_display": mc_display,
-            "pe_ratio":      safe(info.get("trailingPE")),
-            "eps":           safe(info.get("trailingEps")),
-            "dividend_yield": safe(info.get("dividendYield"), 4),
-            "sector":        info.get("sector") or "",
-            "industry":      info.get("industry") or "",
-            "description":   (info.get("longBusinessSummary") or "")[:500],
-            "country":       info.get("country") or "",
-            "website":       info.get("website") or "",
-            "is_global":     True,
+            "pe_ratio":        safe(info.get("trailingPE")),
+            "eps":             safe(info.get("trailingEps")),
+            "dividend_yield":  safe(info.get("dividendYield"), 4),
+            "sector":          info.get("sector") or "",
+            "industry":        info.get("industry") or "",
+            "description":     (info.get("longBusinessSummary") or "")[:500],
+            "country":         info.get("country") or "",
+            "website":         info.get("website") or "",
+            "is_global":       True,
         })
     except Exception as e:
         return jsonify({"error": f"Could not fetch data for '{symbol}': {e}"})
 
 
 
+@app.route("/api/stock/<symbol>/financials")
 @cache.cached(timeout=21600)
 def stock_financials(symbol):
     """Quarterly P&L (as many recent quarters as Yahoo provides - typically
@@ -1722,7 +1781,7 @@ GLOBAL_INDICES = {
     "Nikkei 225": "^N225",
     "Hang Seng": "^HSI",
     "Shanghai Composite": "000001.SS",
-    "MOEX (Russia)": "IMOEX.ME",
+    "Taiwan (TWII)": "^TWII",
 }
 
 # Top 10 blue-chip stocks for each global index, by yfinance symbol.
@@ -1813,17 +1872,17 @@ GLOBAL_INDEX_STOCKS = {
         {"symbol": "600276.SS", "name": "Hengrui Medicine"},
         {"symbol": "601088.SS", "name": "China Shenhua"},
     ],
-    "MOEX (Russia)": [
-        {"symbol": "SBER.ME",  "name": "Sberbank"},
-        {"symbol": "GAZP.ME",  "name": "Gazprom"},
-        {"symbol": "LKOH.ME",  "name": "Lukoil"},
-        {"symbol": "GMKN.ME",  "name": "Norilsk Nickel"},
-        {"symbol": "NVTK.ME",  "name": "Novatek"},
-        {"symbol": "ROSN.ME",  "name": "Rosneft"},
-        {"symbol": "TATN.ME",  "name": "Tatneft"},
-        {"symbol": "MGNT.ME",  "name": "Magnit"},
-        {"symbol": "YNDX.ME",  "name": "Yandex"},
-        {"symbol": "POLY.ME",  "name": "Polymetal"},
+    "Taiwan (TWII)": [
+        {"symbol": "2330.TW",  "name": "TSMC"},
+        {"symbol": "2317.TW",  "name": "Hon Hai (Foxconn)"},
+        {"symbol": "2454.TW",  "name": "MediaTek"},
+        {"symbol": "2382.TW",  "name": "Quanta Computer"},
+        {"symbol": "2308.TW",  "name": "Delta Electronics"},
+        {"symbol": "2881.TW",  "name": "Fubon Financial"},
+        {"symbol": "2882.TW",  "name": "Cathay Financial"},
+        {"symbol": "3711.TW",  "name": "ASE Technology"},
+        {"symbol": "2303.TW",  "name": "United Microelectronics"},
+        {"symbol": "2412.TW",  "name": "Chunghwa Telecom"},
     ],
 }
 

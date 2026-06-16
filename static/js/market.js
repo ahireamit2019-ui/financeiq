@@ -487,39 +487,47 @@ async function openGlobalStockResearch(symbol, indexName) {
 
   if (data.error) {
     title.textContent = symbol;
-    body.innerHTML = `<p class="card-note">${data.error}</p>`;
+    body.innerHTML = `
+      <p class="card-note">${data.error}</p>
+      <button class="period-btn" id="gsrBackBtn" style="margin-top:12px;">← Back to ${indexName}</button>`;
+    document.getElementById("gsrBackBtn").onclick = () => openGlobalIndexModal(indexName);
     return;
   }
 
   const cur = data.currency_symbol || "$";
-  const fmt = v => v !== null && v !== undefined ? `${cur}${parseFloat(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "—";
-  const fmtPct = v => v !== null && v !== undefined ? `${v > 0 ? "+" : ""}${v.toFixed(2)}%` : "—";
-  const chgClass = (v) => v === null || v === undefined ? "" : v >= 0 ? "positive" : "negative";
+  const fmt = v => (v !== null && v !== undefined)
+    ? `${cur}${parseFloat(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+    : "—";
+  const fmtPct = v => (v !== null && v !== undefined)
+    ? `${v > 0 ? "+" : ""}${v.toFixed(2)}%`
+    : "—";
+  const chgClass = v => (v === null || v === undefined) ? "" : v >= 0 ? "positive" : "negative";
 
   title.innerHTML = `${data.name} <span style="font-size:0.85rem;font-weight:400;color:var(--text-muted);">(${symbol})</span>`;
 
   body.innerHTML = `
     <div style="margin-bottom:10px;">
       <span style="font-size:0.8rem;background:rgba(99,102,241,0.15);padding:3px 8px;border-radius:20px;color:var(--primary-light);">
-        ${indexName} · ${data.exchange || ""}${data.country ? " · " + data.country : ""}
+        ${indexName}${data.exchange ? " · " + data.exchange : ""}${data.country ? " · " + data.country : ""}
       </span>
     </div>
 
-    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;flex-wrap:wrap;">
       <span class="price-now">${fmt(data.price)}</span>
       <span class="${chgClass(data.change_pct)}" style="font-weight:600;">
         ${arrow(data.change_pct)} ${fmtPct(data.change_pct)} today
       </span>
     </div>
     <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">
-      Prev close ${fmt(data.prev_close)} &nbsp;·&nbsp; Day ${fmt(data.day_low)} – ${fmt(data.day_high)}
-      &nbsp;·&nbsp; 52W ${fmt(data.year_low)} – ${fmt(data.year_high)}
+      Prev close ${fmt(data.prev_close)} &nbsp;·&nbsp;
+      Day ${fmt(data.day_low)} – ${fmt(data.day_high)} &nbsp;·&nbsp;
+      52W ${fmt(data.year_low)} – ${fmt(data.year_high)}
     </div>
 
     <div class="kpi-grid" style="margin-bottom:16px;">
       <div class="kpi-box"><div class="kpi-label">Market Cap</div><div class="kpi-value">${data.market_cap_display || "—"}</div></div>
-      <div class="kpi-box"><div class="kpi-label">P/E Ratio</div><div class="kpi-value">${data.pe_ratio !== null ? data.pe_ratio : "—"}</div></div>
-      <div class="kpi-box"><div class="kpi-label">EPS (TTM)</div><div class="kpi-value">${data.eps !== null ? fmt(data.eps) : "—"}</div></div>
+      <div class="kpi-box"><div class="kpi-label">P/E Ratio</div><div class="kpi-value">${data.pe_ratio !== null && data.pe_ratio !== undefined ? data.pe_ratio : "—"}</div></div>
+      <div class="kpi-box"><div class="kpi-label">EPS (TTM)</div><div class="kpi-value">${data.eps !== null && data.eps !== undefined ? fmt(data.eps) : "—"}</div></div>
       <div class="kpi-box"><div class="kpi-label">Dividend Yield</div><div class="kpi-value">${data.dividend_yield ? (data.dividend_yield * 100).toFixed(2) + "%" : "—"}</div></div>
       <div class="kpi-box"><div class="kpi-label">Sector</div><div class="kpi-value" style="font-size:0.8rem;">${data.sector || "—"}</div></div>
       <div class="kpi-box"><div class="kpi-label">Currency</div><div class="kpi-value">${data.currency || "—"}</div></div>
@@ -527,14 +535,18 @@ async function openGlobalStockResearch(symbol, indexName) {
 
     ${data.description ? `
     <div class="card" style="margin-bottom:12px;padding:12px 14px;background:var(--surface-2);">
-      <div style="font-size:0.8rem;color:var(--text-muted);">${data.description}</div>
+      <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.6;">${data.description}</div>
     </div>` : ""}
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
       ${data.website ? `<a href="${data.website}" target="_blank" rel="noopener" class="period-btn" style="text-decoration:none;">🌐 Website</a>` : ""}
-      <button class="period-btn" onclick="closeModal();openGlobalIndexModal('${indexName}');">← Back to ${indexName}</button>
+      <button class="period-btn" id="gsrBackBtn">← Back to ${indexName}</button>
     </div>
   `;
+
+  // Wire back button via JS (safe regardless of special chars in indexName)
+  const backBtn = document.getElementById("gsrBackBtn");
+  if (backBtn) backBtn.onclick = () => openGlobalIndexModal(indexName);
 }
 
 
