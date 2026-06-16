@@ -519,22 +519,22 @@ SECTOR_INDICES = {
 # clicked. "Defence" has no Yahoo sector-index ticker, so its heatmap
 # change_pct is computed as the average change of these constituents instead.
 SECTOR_STOCKS = {
-    "Auto": ["MARUTI", "TATAMOTORS", "M&M", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "ASHOKLEY", "TVSMOTOR"],
+    "Auto": ["MARUTI", "M&M", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "ASHOKLEY", "TVSMOTOR", "TIINDIA"],
     "Bank": ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "INDUSINDBK", "BANKBARODA", "PNB"],
-    "IT": ["TCS", "INFY", "HCLTECH", "WIPRO", "TECHM", "LTIM", "MPHASIS", "PERSISTENT"],
+    "IT": ["TCS", "INFY", "HCLTECH", "WIPRO", "TECHM", "MPHASIS", "PERSISTENT", "COFORGE"],
     "Pharma": ["SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "LUPIN", "AUROPHARMA", "TORNTPHARM", "ZYDUSLIFE"],
     "FMCG": ["HINDUNILVR", "ITC", "NESTLEIND", "BRITANNIA", "DABUR", "TATACONSUM", "GODREJCP", "MARICO"],
     "Metal": ["TATASTEEL", "JSWSTEEL", "HINDALCO", "VEDL", "JINDALSTEL", "SAIL", "NMDC", "COALINDIA"],
     "Realty": ["DLF", "GODREJPROP", "OBEROIRLTY", "PHOENIXLTD", "PRESTIGE", "BRIGADE", "SOBHA", "LODHA"],
     "Energy": ["RELIANCE", "ONGC", "NTPC", "POWERGRID", "ADANIGREEN", "TATAPOWER", "BPCL", "IOC"],
-    "Infra": ["LT", "ADANIPORTS", "GMRINFRA", "IRB", "NBCC", "NCC", "KEC", "RVNL"],
-    "Media": ["ZEEL", "SUNTV", "PVRINOX", "NETWORK18", "DISHTV", "TIPSINDLTD", "SAREGAMA", "NAZARA"],
+    "Infra": ["LT", "ADANIPORTS", "IRB", "NBCC", "NCC", "KEC", "RVNL", "PFC"],
+    "Media": ["ZEEL", "SUNTV", "PVRINOX", "NETWORK18", "DISHTV", "SAREGAMA", "NAZARA", "TIPS"],
     "Defence": ["HAL", "BEL", "BDL", "MAZDOCK", "COCHINSHIP", "SOLARINDS", "BEML", "DATAPATTNS"],
-    "Water": ["WABAG", "CLEAN", "ION", "ELGIEQUIP", "THERMAX", "KIRLOSKAR", "JASH", "FLUOROCHEM"],
+    "Water": ["WABAG", "CLEAN", "ELGIEQUIP", "THERMAX", "KIRLOSKAR", "JASH", "EPIGRAL", "IONEXCHANG"],
     "Oil & Gas": ["RELIANCE", "ONGC", "BPCL", "IOC", "GAIL", "PETRONET", "OIL", "MRPL"],
-    "Consumer Durables": ["VOLTAS", "HAVELLS", "BLUESTARCO", "CROMPTON", "WHIRLPOOL", "VGUARD", "ORIENTELEC", "SYMPHONY"],
-    "Semiconductor": ["DIXON", "KAYNES", "SYRMA", "PGEL", "IDEAFORGE", "RUTTONSHA", "MOSCHIP", "INFIBEAM"],
-    "Telecom": ["BHARTIARTL", "IDEA", "TATACOMM", "RAILTEL", "HFCL", "STLTECH", "INDUS", "TEJAS"],
+    "Consumer Durables": ["VOLTAS", "HAVELLS", "BLUESTARCO", "CROMPTON", "VGUARD", "ORIENTELEC", "SYMPHONY", "AMBER"],
+    "Semiconductor": ["DIXON", "KAYNES", "SYRMA", "PGEL", "MOSCHIP", "ASTRA", "ZENTEC", "GRAVITA"],
+    "Telecom": ["BHARTIARTL", "IDEA", "TATACOMM", "RAILTEL", "HFCL", "STLTECH", "TTML", "GTLINFRA"],
     "Nifty 50": ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "BHARTIARTL", "ITC", "LT", "SBIN", "HINDUNILVR"],
     "Nifty Midcap": ["PERSISTENT", "FEDERALBNK", "INDHOTEL", "POLYCAB", "COFORGE", "MFSL", "ASTRAL", "SUPREMEIND", "PAGEIND", "AUBANK"],
 }
@@ -1607,13 +1607,26 @@ def market_overview():
 
 
 def quote_change_pct(nse_symbol: str) -> float | None:
-    """Quick helper: today's % change for an NSE symbol via Yahoo fast_info."""
+    """Quick helper: today's % change for an NSE symbol.
+    Tries fast_info first (fastest), falls back to 5-day history download
+    for symbols where yfinance's fast_info has a known bug."""
     try:
         fi = yf_ticker(f"{nse_symbol}.NS").fast_info
         price = fi.get("lastPrice")
         prev = fi.get("previousClose")
         if price and prev:
             return round(((price - prev) / prev) * 100, 2)
+    except Exception:
+        pass
+    # Fallback: per-symbol download (handles symbols where fast_info crashes)
+    try:
+        import yfinance as yf
+        df = yf.download(f"{nse_symbol}.NS", period="5d", interval="1d",
+                         progress=False, auto_adjust=True)
+        closes = df["Close"].dropna()
+        if len(closes) >= 2:
+            last, prev = float(closes.iloc[-1]), float(closes.iloc[-2])
+            return round((last - prev) / prev * 100, 2)
     except Exception:
         pass
     return None
@@ -1669,18 +1682,31 @@ def sector_stocks(key):
         return jsonify({"error": f"Unknown sector '{key}'."})
 
     def fetch_stock(symbol):
+        # Try fast_info first
         try:
             fi = yf_ticker(f"{symbol}.NS").fast_info
             price = fi.get("lastPrice")
             prev = fi.get("previousClose")
-            change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
-            return {
-                "symbol": symbol,
-                "price": round(price, 2) if price is not None else None,
-                "change_pct": change_pct,
-            }
+            if price:
+                change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
+                return {"symbol": symbol, "price": round(price, 2), "change_pct": change_pct}
         except Exception:
-            return {"symbol": symbol, "price": None, "change_pct": None}
+            pass
+        # Fallback: history download
+        try:
+            import yfinance as yf
+            df = yf.download(f"{symbol}.NS", period="5d", interval="1d",
+                             progress=False, auto_adjust=True)
+            closes = df["Close"].dropna()
+            if len(closes) >= 2:
+                last, prev = float(closes.iloc[-1]), float(closes.iloc[-2])
+                pct = round((last - prev) / prev * 100, 2)
+                return {"symbol": symbol, "price": round(last, 2), "change_pct": pct}
+            elif len(closes) == 1:
+                return {"symbol": symbol, "price": round(float(closes.iloc[-1]), 2), "change_pct": None}
+        except Exception:
+            pass
+        return {"symbol": symbol, "price": None, "change_pct": None}
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         stocks = list(executor.map(fetch_stock, symbols))
@@ -1836,21 +1862,42 @@ def global_index_stocks(index_name):
         return jsonify({"error": f"No blue-chip list defined for '{index_name}'."}), 404
 
     def fetch_stock(entry):
+        # Try fast_info first (fastest path)
         try:
             fi = yf_ticker(entry["symbol"]).fast_info
             price = fi.get("lastPrice")
             prev  = fi.get("previousClose")
-            if not price:
-                return None
-            change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
-            return {
-                "symbol":     entry["symbol"],
-                "name":       entry["name"],
-                "price":      round(float(price), 2),
-                "change_pct": change_pct,
-            }
+            if price:
+                change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
+                return {
+                    "symbol":     entry["symbol"],
+                    "name":       entry["name"],
+                    "price":      round(float(price), 2),
+                    "change_pct": change_pct,
+                }
         except Exception:
-            return None
+            pass
+        # Fallback: history download (handles MOEX and other exchange quirks)
+        try:
+            import yfinance as yf
+            df = yf.download(entry["symbol"], period="5d", interval="1d",
+                             progress=False, auto_adjust=True)
+            closes = df["Close"].dropna()
+            if len(closes) >= 1:
+                last = float(closes.iloc[-1])
+                change_pct = None
+                if len(closes) >= 2:
+                    prev = float(closes.iloc[-2])
+                    change_pct = round((last - prev) / prev * 100, 2)
+                return {
+                    "symbol":     entry["symbol"],
+                    "name":       entry["name"],
+                    "price":      round(last, 2),
+                    "change_pct": change_pct,
+                }
+        except Exception:
+            pass
+        return None
 
     results = []
     with ThreadPoolExecutor(max_workers=10) as executor:
@@ -1865,6 +1912,7 @@ def global_index_stocks(index_name):
 
 
 
+@app.route("/api/market/52week")
 @cache.cached(timeout=1800)
 def market_52week():
     """Scan every stock available on the site and rank by proximity to its
@@ -1877,20 +1925,35 @@ def market_52week():
             price = fi.get("lastPrice")
             year_high = fi.get("yearHigh")
             year_low = fi.get("yearLow")
-            if not price or not year_high or not year_low:
-                return None
-            pct_from_high = round((price - year_high) / year_high * 100, 2)
-            pct_from_low = round((price - year_low) / year_low * 100, 2)
-            return {
-                "symbol": symbol,
-                "price": round(price, 2),
-                "year_high": round(year_high, 2),
-                "year_low": round(year_low, 2),
-                "pct_from_high": pct_from_high,
-                "pct_from_low": pct_from_low,
-            }
+            if price and year_high and year_low:
+                pct_from_high = round((price - year_high) / year_high * 100, 2)
+                pct_from_low = round((price - year_low) / year_low * 100, 2)
+                return {
+                    "symbol": symbol, "price": round(price, 2),
+                    "year_high": round(year_high, 2), "year_low": round(year_low, 2),
+                    "pct_from_high": pct_from_high, "pct_from_low": pct_from_low,
+                }
         except Exception:
-            return None
+            pass
+        # Fallback: use 1-year history to compute high/low manually
+        try:
+            import yfinance as yf
+            df = yf.download(f"{symbol}.NS", period="1y", interval="1d",
+                             progress=False, auto_adjust=True)
+            if not df.empty:
+                price = float(df["Close"].dropna().iloc[-1])
+                year_high = float(df["High"].dropna().max())
+                year_low = float(df["Low"].dropna().min())
+                pct_from_high = round((price - year_high) / year_high * 100, 2)
+                pct_from_low = round((price - year_low) / year_low * 100, 2)
+                return {
+                    "symbol": symbol, "price": round(price, 2),
+                    "year_high": round(year_high, 2), "year_low": round(year_low, 2),
+                    "pct_from_high": pct_from_high, "pct_from_low": pct_from_low,
+                }
+        except Exception:
+            pass
+        return None
 
     results = []
     with ThreadPoolExecutor(max_workers=16) as executor:

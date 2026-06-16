@@ -467,7 +467,8 @@ async function openGlobalIndexModal(indexName) {
 
   body.querySelectorAll(".global-stock-row").forEach(row => {
     row.addEventListener("click", () => {
-      closeModal();
+      // Replace modal content in-place rather than close→open to avoid
+      // timing issues where the second openModal fires before the first closes
       openGlobalStockResearch(row.dataset.symbol, indexName);
     });
   });
