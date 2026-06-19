@@ -6,3 +6,7 @@ requests==2.32.3
 gunicorn==22.0.0
 python-dotenv==1.0.0
 flask-compress==1.15
+smartapi-python==1.5.5
+pyotp==2.9.0
+websocket-client==1.7.0
+logzero==1.7.0

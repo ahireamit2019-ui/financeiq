@@ -289,6 +289,9 @@ async function searchStock(rawQuery) {
 function renderReportCard(container, data) {
   const changeClass = pctClass(data.change_pct);
   const marketCap = data.market_cap_cr ? formatCrore(data.market_cap_cr) : "—";
+  const sourceBadge = data.source === "Angel One"
+    ? `<span style="font-size:0.65rem;background:rgba(16,185,129,0.15);color:#10B981;padding:2px 8px;border-radius:20px;font-weight:600;margin-left:8px;">● LIVE</span>`
+    : `<span style="font-size:0.65rem;background:rgba(100,100,100,0.15);color:var(--text-muted);padding:2px 8px;border-radius:20px;margin-left:8px;">Delayed</span>`;
 
   // Keep a reference to the currently displayed stock so the Compare
   // feature can pull it back in without re-fetching.
@@ -308,7 +311,7 @@ function renderReportCard(container, data) {
           </div>
         </div>
         <div class="price-block">
-          <div class="price-now">${formatRupee(data.price)}</div>
+          <div class="price-now">${formatRupee(data.price)}${sourceBadge}</div>
           <div class="price-change ${changeClass}">
             ${arrow(data.change_pct)} ${formatRupee(Math.abs(data.change || 0))} (${formatPct(data.change_pct)}) today
           </div>

@@ -20,11 +20,138 @@ from flask_compress import Compress
 
 import yfinance as yf
 
+import threading
+
+try:
+    import pyotp
+    from SmartApi import SmartConnect
+    SMARTAPI_AVAILABLE = True
+except Exception:
+    SMARTAPI_AVAILABLE = False
+
 app = Flask(__name__)
 CORS(app)
 Compress(app)
 
 cache = Cache(app, config={"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300})
+
+# ---------------------------------------------------------------------------
+# Angel One SmartAPI — primary real-time data source for NSE quotes.
+# Falls back to yfinance/Finnhub automatically if unavailable or unconfigured.
+# ---------------------------------------------------------------------------
+
+
+class AngelOneSession:
+    def __init__(self):
+        self.api = None
+        self.auth_token = None
+        self.feed_token = None
+        self.last_login = None
+        self._lock = threading.Lock()
+        self.enabled = SMARTAPI_AVAILABLE and all([
+            os.environ.get("ANGEL_API_KEY"),
+            os.environ.get("ANGEL_CLIENT_ID"),
+            os.environ.get("ANGEL_PASSWORD"),
+            os.environ.get("ANGEL_TOTP_SECRET"),
+        ])
+
+    def login(self):
+        if not self.enabled:
+            print("Angel One: credentials not configured")
+            return False
+        try:
+            totp = pyotp.TOTP(os.environ["ANGEL_TOTP_SECRET"]).now()
+            self.api = SmartConnect(api_key=os.environ["ANGEL_API_KEY"])
+            data = self.api.generateSession(
+                os.environ["ANGEL_CLIENT_ID"],
+                os.environ["ANGEL_PASSWORD"],
+                totp
+            )
+            if data and data.get("status"):
+                self.auth_token = data["data"]["jwtToken"]
+                self.feed_token = self.api.getfeedToken()
+                self.last_login = datetime.now()
+                print("Angel One: login successful")
+                return True
+            print(f"Angel One: login failed: {data}")
+            return False
+        except Exception as e:
+            print(f"Angel One: login error: {e}")
+            return False
+
+    def ensure_session(self):
+        with self._lock:
+            if not self.enabled:
+                return False
+            if not self.last_login:
+                return self.login()
+            if (datetime.now() - self.last_login).total_seconds() > 82800:
+                return self.login()
+            return self.api is not None
+
+    def get_quote(self, exchange_tokens: dict) -> list:
+        if not self.ensure_session():
+            return []
+        try:
+            data = self.api.getMarketData("QUOTE", exchange_tokens)
+            if data and data.get("status") and data.get("data"):
+                return data["data"].get("fetched", [])
+        except Exception as e:
+            print(f"Angel getMarketData error: {e}")
+            self.last_login = None
+        return []
+
+    def get_ltp(self, exchange: str, token: str):
+        if not self.ensure_session():
+            return None
+        try:
+            data = self.api.ltpData(exchange, "", token)
+            if data and data.get("status"):
+                return data["data"].get("ltp")
+        except Exception as e:
+            print(f"Angel LTP error: {e}")
+            self.last_login = None
+        return None
+
+    def get_historical(self, token, exchange, interval, from_date, to_date):
+        if not self.ensure_session():
+            return []
+        try:
+            params = {
+                "exchange": exchange,
+                "symboltoken": token,
+                "interval": interval,
+                "fromdate": from_date,
+                "todate": to_date,
+            }
+            data = self.api.getCandleData(params)
+            if data and data.get("status") and data.get("data"):
+                return data["data"]
+        except Exception as e:
+            print(f"Angel historical error: {e}")
+        return []
+
+    def search_scrip(self, query: str, exchange: str = "NSE") -> list:
+        if not self.ensure_session():
+            return []
+        try:
+            data = self.api.searchScrip(exchange, query)
+            if data and data.get("status"):
+                return data.get("data") or []
+        except Exception as e:
+            print(f"Angel searchScrip error: {e}")
+        return []
+
+
+angel = AngelOneSession()
+
+
+def _angel_init():
+    time.sleep(5)
+    angel.login()
+
+
+threading.Thread(target=_angel_init, daemon=True).start()
 
 # ---------------------------------------------------------------------------
 # Finnhub — fallback data source when Yahoo Finance rate-limits us.
@@ -604,6 +731,226 @@ COMMODITY_UNIT_INFO = {
 }
 
 # ---------------------------------------------------------------------------
+# Angel One instrument tokens — NSE symbol -> (symboltoken, exchange).
+# Covers Nifty 50 + commonly viewed mid/small-caps on this site. Symbols not
+# in this map are resolved on demand via Angel's searchScrip API.
+# ---------------------------------------------------------------------------
+ANGEL_TOKENS = {
+    "RELIANCE": ("2885", "NSE"),
+    "TCS": ("11536", "NSE"),
+    "HDFCBANK": ("1333", "NSE"),
+    "ICICIBANK": ("4963", "NSE"),
+    "INFY": ("1594", "NSE"),
+    "SBIN": ("3045", "NSE"),
+    "BHARTIARTL": ("10604", "NSE"),
+    "ITC": ("1660", "NSE"),
+    "LT": ("11483", "NSE"),
+    "KOTAKBANK": ("1922", "NSE"),
+    "AXISBANK": ("5900", "NSE"),
+    "HINDUNILVR": ("1394", "NSE"),
+    "BAJFINANCE": ("317", "NSE"),
+    "MARUTI": ("10999", "NSE"),
+    "TITAN": ("3506", "NSE"),
+    "SUNPHARMA": ("3351", "NSE"),
+    "WIPRO": ("3787", "NSE"),
+    "HCLTECH": ("7229", "NSE"),
+    "TATAMOTORS": ("3456", "NSE"),
+    "ONGC": ("2475", "NSE"),
+    "NTPC": ("11630", "NSE"),
+    "POWERGRID": ("14977", "NSE"),
+    "COALINDIA": ("20374", "NSE"),
+    "TATASTEEL": ("3499", "NSE"),
+    "ADANIPORTS": ("15083", "NSE"),
+    "M&M": ("2031", "NSE"),
+    "NESTLEIND": ("17963", "NSE"),
+    "BAJAJ-AUTO": ("16669", "NSE"),
+    "EICHERMOT": ("910", "NSE"),
+    "HEROMOTOCO": ("1348", "NSE"),
+    "ULTRACEMCO": ("11532", "NSE"),
+    "TECHM": ("13538", "NSE"),
+    "ASIANPAINT": ("236", "NSE"),
+    "INDUSINDBK": ("5258", "NSE"),
+    "GRASIM": ("1232", "NSE"),
+    "BAJAJFINSV": ("16675", "NSE"),
+    "ADANIENT": ("25", "NSE"),
+    "DIVISLAB": ("10940", "NSE"),
+    "CIPLA": ("694", "NSE"),
+    "DRREDDY": ("881", "NSE"),
+    "JSWSTEEL": ("11723", "NSE"),
+    "HINDALCO": ("1363", "NSE"),
+    "TATACONSUM": ("3432", "NSE"),
+    "APOLLOHOSP": ("157", "NSE"),
+    "BRITANNIA": ("547", "NSE"),
+    "BPCL": ("526", "NSE"),
+    "BANKBARODA": ("4668", "NSE"),
+    "PNB": ("10666", "NSE"),
+    "FEDERALBNK": ("1023", "NSE"),
+    "AUBANK": ("21238", "NSE"),
+    "YESBANK": ("11915", "NSE"),
+    "IDFCFIRSTB": ("11652", "NSE"),
+    "LTIM": ("17818", "NSE"),
+    "MPHASIS": ("4503", "NSE"),
+    "PERSISTENT": ("4338", "NSE"),
+    "COFORGE": ("10626", "NSE"),
+    "TATAELXSI": ("3505", "NSE"),
+    "OFSS": ("10738", "NSE"),
+    "LUPIN": ("10440", "NSE"),
+    "AUROPHARMA": ("275", "NSE"),
+    "TORNTPHARM": ("3526", "NSE"),
+    "ZYDUSLIFE": ("7929", "NSE"),
+    "BIOCON": ("11373", "NSE"),
+    "TVSMOTOR": ("3986", "NSE"),
+    "ASHOKLEY": ("212", "NSE"),
+    "BALKRISIND": ("335", "NSE"),
+    "BOSCHLTD": ("2181", "NSE"),
+    "DABUR": ("772", "NSE"),
+    "GODREJCP": ("10099", "NSE"),
+    "MARICO": ("4067", "NSE"),
+    "COLPAL": ("742", "NSE"),
+    "DLF": ("14732", "NSE"),
+    "GODREJPROP": ("17875", "NSE"),
+    "OBEROIRLTY": ("20141", "NSE"),
+    "PHOENIXLTD": ("3911", "NSE"),
+    "IOC": ("1624", "NSE"),
+    "GAIL": ("1209", "NSE"),
+    "PETRONET": ("11351", "NSE"),
+    "ADANIGREEN": ("21866", "NSE"),
+    "TATAPOWER": ("3426", "NSE"),
+    "VEDL": ("3063", "NSE"),
+    "JINDALSTEL": ("15355", "NSE"),
+    "SAIL": ("2963", "NSE"),
+    "NMDC": ("15332", "NSE"),
+    "IRB": ("14995", "NSE"),
+    "NBCC": ("20263", "NSE"),
+    "NCC": ("14978", "NSE"),
+    "PFC": ("14299", "NSE"),
+    "RECLTD": ("20286", "NSE"),
+    "HAL": ("2303", "NSE"),
+    "BEL": ("383", "NSE"),
+    "MAZDOCK": ("21757", "NSE"),
+    "COCHINSHIP": ("11259", "NSE"),
+    "SOLARINDS": ("14149", "NSE"),
+    "BEML": ("384", "NSE"),
+    "ZEEL": ("3812", "NSE"),
+    "SUNTV": ("3366", "NSE"),
+    "SAREGAMA": ("2975", "NSE"),
+    "IDEA": ("14366", "NSE"),
+    "HFCL": ("1358", "NSE"),
+    "DIXON": ("13538", "NSE"),
+    "KAYNES": ("21866", "NSE"),
+    "VOLTAS": ("3575", "NSE"),
+    "HAVELLS": ("13913", "NSE"),
+    "WABAG": ("3689", "NSE"),
+    "ELGIEQUIP": ("914", "NSE"),
+    "THERMAX": ("3484", "NSE"),
+    "NIFTY50IDX": ("99926000", "NSE"),
+    "BANKNIFTY": ("99926009", "NSE"),
+}
+
+ANGEL_TOKEN_TO_SYMBOL = {v[0]: k for k, v in ANGEL_TOKENS.items()}
+
+
+def get_angel_token(symbol: str):
+    symbol = symbol.upper().strip()
+    if symbol in ANGEL_TOKENS:
+        return ANGEL_TOKENS[symbol]
+    if angel.enabled and angel.ensure_session():
+        try:
+            results = angel.search_scrip(symbol)
+            for r in results:
+                if r.get("tradingsymbol", "").upper() == symbol:
+                    token = r.get("symboltoken")
+                    exchange = r.get("exch_seg", "NSE")
+                    if token:
+                        ANGEL_TOKENS[symbol] = (token, exchange)
+                        ANGEL_TOKEN_TO_SYMBOL[token] = symbol
+                        return (token, exchange)
+        except Exception:
+            pass
+    return None
+
+
+def get_live_quote(symbol: str):
+    """Tiered live-quote lookup: Angel One (real-time) -> yfinance fast_info
+    -> yfinance history. Returns a dict or None if all tiers fail."""
+    symbol = symbol.upper().strip()
+
+    # Tier 1: Angel One real-time
+    if angel.enabled:
+        token_info = get_angel_token(symbol)
+        if token_info:
+            token, exchange = token_info
+            try:
+                fetched = angel.get_quote({exchange: [token]})
+                for item in fetched:
+                    if item.get("symbolToken") == token:
+                        ltp = item.get("ltp") or item.get("close")
+                        close = item.get("close") or ltp
+                        if ltp:
+                            change_pct = round((float(ltp)-float(close))/float(close)*100, 2) if close and float(close) != 0 and float(ltp) != float(close) else 0
+                            return {
+                                "symbol": symbol,
+                                "price": float(ltp),
+                                "change": round(float(ltp)-float(close), 2) if close else 0,
+                                "change_pct": change_pct,
+                                "open": item.get("open"),
+                                "high": item.get("high"),
+                                "low": item.get("low"),
+                                "prev_close": close,
+                                "volume": item.get("tradeVolume"),
+                                "upper_circuit": item.get("upperCircuit"),
+                                "lower_circuit": item.get("lowerCircuit"),
+                                "week_52_high": item.get("52WeekHigh"),
+                                "week_52_low": item.get("52WeekLow"),
+                                "source": "Angel One",
+                                "real_time": True,
+                            }
+            except Exception as e:
+                print(f"Angel quote failed for {symbol}: {e}")
+
+    # Tier 2: yfinance fast_info
+    try:
+        fi = yf_ticker(f"{symbol}.NS").fast_info
+        price = fi.get("lastPrice")
+        prev = fi.get("previousClose")
+        if price:
+            return {
+                "symbol": symbol,
+                "price": round(float(price), 2),
+                "change": round(float(price)-float(prev), 2) if prev else None,
+                "change_pct": round((float(price)-float(prev))/float(prev)*100, 2) if prev else None,
+                "high": fi.get("dayHigh"),
+                "low": fi.get("dayLow"),
+                "prev_close": prev,
+                "week_52_high": fi.get("yearHigh"),
+                "week_52_low": fi.get("yearLow"),
+                "source": "yfinance",
+                "real_time": False,
+            }
+    except Exception:
+        pass
+
+    # Tier 3: yfinance history
+    try:
+        hist = yf_ticker(f"{symbol}.NS").history(period="5d")
+        if hist is not None and not hist.empty:
+            closes = hist["Close"].dropna()
+            if len(closes) >= 1:
+                price = float(closes.iloc[-1])
+                prev = float(closes.iloc[-2]) if len(closes) >= 2 else None
+                return {
+                    "symbol": symbol,
+                    "price": round(price, 2),
+                    "change_pct": round((price-prev)/prev*100, 2) if prev else None,
+                    "source": "yfinance-history",
+                    "real_time": False,
+                }
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1042,6 +1389,21 @@ def stock_autocomplete(query):
         return jsonify({"error": f"Search failed: {e}"})
 
 
+def _overlay_angel_quote(result: dict, nse_symbol: str) -> None:
+    """Overlay Angel One's real-time price/change onto a stock_data result
+    built from yfinance/Finnhub. Fundamentals (sector, PE, market cap, etc.)
+    stay from the original source since Angel One's quote API doesn't carry
+    them — only price/change/source are replaced when Angel One succeeds."""
+    if not angel.enabled:
+        return
+    q = get_live_quote(nse_symbol)
+    if q and q.get("source") == "Angel One" and q.get("price"):
+        result["price"] = q["price"]
+        result["change"] = q.get("change")
+        result["change_pct"] = q.get("change_pct")
+        result["source"] = "Angel One"
+
+
 @app.route("/api/stock/<symbol>")
 @cache.cached(query_string=True)
 def stock_data(symbol):
@@ -1096,7 +1458,9 @@ def stock_data(symbol):
                     f"https://ui-avatars.com/api/?name={requests.utils.quote(info.get('shortName', nse_symbol))}&background=2563EB&color=fff"
                 ),
                 "data_source": "Yahoo Finance",
+                "source": "yfinance",
             }
+            _overlay_angel_quote(result, nse_symbol)
             return jsonify(result)
 
         # ── Fallback: Finnhub ───────────────────────────────────────────────
@@ -1138,7 +1502,9 @@ def stock_data(symbol):
             "dividend_yield": metrics.get("dividendYieldIndicatedAnnual"),
             "logo_url": logo,
             "data_source": "Finnhub",
+            "source": "Finnhub",
         }
+        _overlay_angel_quote(result, nse_symbol)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": f"Failed to fetch stock data: {e}"})
@@ -1755,12 +2121,10 @@ def market_overview():
 
         def fetch_mover(s):
             try:
-                fi = yf_ticker(f"{s}.NS").fast_info
-                price = fi.get("lastPrice")
-                prev = fi.get("previousClose")
-                if price and prev:
-                    pct = round(((price - prev) / prev) * 100, 2)
-                    return {"symbol": s, "price": round(float(price), 2), "change_pct": pct}
+                q = get_live_quote(s)
+                if q and q.get("price"):
+                    return {"symbol": s, "price": round(float(q["price"]), 2),
+                            "change_pct": q.get("change_pct")}
             except Exception:
                 pass
             return None
@@ -1796,28 +2160,10 @@ def market_overview():
 
 
 def quote_change_pct(nse_symbol: str) -> float | None:
-    """Quick helper: today's % change for an NSE symbol.
-    Tries fast_info first (fastest), falls back to 5-day history download
-    for symbols where yfinance's fast_info has a known bug."""
-    try:
-        fi = yf_ticker(f"{nse_symbol}.NS").fast_info
-        price = fi.get("lastPrice")
-        prev = fi.get("previousClose")
-        if price and prev:
-            return round(((price - prev) / prev) * 100, 2)
-    except Exception:
-        pass
-    # Fallback: per-symbol download (handles symbols where fast_info crashes)
-    try:
-        import yfinance as yf
-        df = yf.download(f"{nse_symbol}.NS", period="5d", interval="1d",
-                         progress=False, auto_adjust=True)
-        closes = df["Close"].dropna()
-        if len(closes) >= 2:
-            last, prev = float(closes.iloc[-1]), float(closes.iloc[-2])
-            return round((last - prev) / prev * 100, 2)
-    except Exception:
-        pass
+    """Quick helper: today's % change for an NSE symbol."""
+    q = get_live_quote(nse_symbol)
+    if q and q.get("change_pct") is not None:
+        return q["change_pct"]
     return None
 
 
@@ -1871,44 +2217,10 @@ def sector_stocks(key):
         return jsonify({"error": f"Unknown sector '{key}'."})
 
     def fetch_stock(symbol):
-        # Method 1: fast_info (fastest path)
-        try:
-            fi = yf_ticker(f"{symbol}.NS").fast_info
-            price = fi.get("lastPrice")
-            prev = fi.get("previousClose")
-            if price:
-                change_pct = round(((price - prev) / prev) * 100, 2) if price and prev else None
-                return {"symbol": symbol, "price": round(price, 2), "change_pct": change_pct}
-        except Exception:
-            pass
-        # Method 2: ticker.history() — uses yfinance session, better for some NSE symbols
-        try:
-            t = yf_ticker(f"{symbol}.NS")
-            hist = t.history(period="5d", interval="1d")
-            closes = hist["Close"].dropna()
-            if len(closes) >= 1:
-                last = float(closes.iloc[-1])
-                change_pct = None
-                if len(closes) >= 2:
-                    prev = float(closes.iloc[-2])
-                    change_pct = round((last - prev) / prev * 100, 2)
-                return {"symbol": symbol, "price": round(last, 2), "change_pct": change_pct}
-        except Exception:
-            pass
-        # Method 3: yf.download bulk endpoint
-        try:
-            import yfinance as yf
-            df = yf.download(f"{symbol}.NS", period="5d", interval="1d",
-                             progress=False, auto_adjust=True)
-            closes = df["Close"].dropna()
-            if len(closes) >= 2:
-                last, prev = float(closes.iloc[-1]), float(closes.iloc[-2])
-                pct = round((last - prev) / prev * 100, 2)
-                return {"symbol": symbol, "price": round(last, 2), "change_pct": pct}
-            elif len(closes) == 1:
-                return {"symbol": symbol, "price": round(float(closes.iloc[-1]), 2), "change_pct": None}
-        except Exception:
-            pass
+        q = get_live_quote(symbol)
+        if q and q.get("price"):
+            return {"symbol": symbol, "price": round(float(q["price"]), 2),
+                    "change_pct": q.get("change_pct")}
         return {"symbol": symbol, "price": None, "change_pct": None}
 
     with ThreadPoolExecutor(max_workers=6) as executor:
@@ -2142,40 +2454,33 @@ def market_52week():
     the full ranked list (for the "show all" view)."""
 
     def fetch_stock(symbol):
-        try:
-            fi = yf_ticker(f"{symbol}.NS").fast_info
-            price = fi.get("lastPrice")
-            year_high = fi.get("yearHigh")
-            year_low = fi.get("yearLow")
-            if price and year_high and year_low:
-                pct_from_high = round((price - year_high) / year_high * 100, 2)
-                pct_from_low = round((price - year_low) / year_low * 100, 2)
-                return {
-                    "symbol": symbol, "price": round(price, 2),
-                    "year_high": round(year_high, 2), "year_low": round(year_low, 2),
-                    "pct_from_high": pct_from_high, "pct_from_low": pct_from_low,
-                }
-        except Exception:
-            pass
-        # Fallback: use 1-year history to compute high/low manually
-        try:
-            import yfinance as yf
-            df = yf.download(f"{symbol}.NS", period="1y", interval="1d",
-                             progress=False, auto_adjust=True)
-            if not df.empty:
-                price = float(df["Close"].dropna().iloc[-1])
-                year_high = float(df["High"].dropna().max())
-                year_low = float(df["Low"].dropna().min())
-                pct_from_high = round((price - year_high) / year_high * 100, 2)
-                pct_from_low = round((price - year_low) / year_low * 100, 2)
-                return {
-                    "symbol": symbol, "price": round(price, 2),
-                    "year_high": round(year_high, 2), "year_low": round(year_low, 2),
-                    "pct_from_high": pct_from_high, "pct_from_low": pct_from_low,
-                }
-        except Exception:
-            pass
-        return None
+        q = get_live_quote(symbol)
+        if not q or not q.get("price"):
+            return None
+        price = float(q["price"])
+        year_high = q.get("week_52_high") or q.get("year_high")
+        year_low = q.get("week_52_low") or q.get("year_low")
+        if not year_high or not year_low:
+            # Fallback: use 1-year history to compute high/low manually
+            try:
+                import yfinance as yf
+                df = yf.download(f"{symbol}.NS", period="1y", interval="1d",
+                                 progress=False, auto_adjust=True)
+                if not df.empty:
+                    year_high = float(df["High"].dropna().max())
+                    year_low = float(df["Low"].dropna().min())
+            except Exception:
+                pass
+        if not year_high or not year_low:
+            return None
+        return {
+            "symbol": symbol,
+            "price": round(price, 2),
+            "year_high": round(float(year_high), 2),
+            "year_low": round(float(year_low), 2),
+            "pct_from_high": round((price-float(year_high))/float(year_high)*100, 2),
+            "pct_from_low": round((price-float(year_low))/float(year_low)*100, 2),
+        }
 
     results = []
     with ThreadPoolExecutor(max_workers=8) as executor:
@@ -3356,7 +3661,28 @@ def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
 
-import threading
+@app.route("/api/angel/status")
+def angel_status():
+    return jsonify({
+        "enabled": angel.enabled,
+        "connected": angel.api is not None,
+        "last_login": angel.last_login.isoformat() if angel.last_login else None,
+        "tokens_mapped": len(ANGEL_TOKENS),
+        "message": "Real-time NSE data active" if angel.api else (
+            "Credentials not configured" if not angel.enabled else "Login failed - using yfinance fallback"
+        ),
+    })
+
+
+@app.route("/api/stock/<symbol>/live")
+@cache.cached(timeout=15)
+def stock_live(symbol):
+    nse_sym = resolve_symbol(symbol)
+    q = get_live_quote(nse_sym)
+    if not q:
+        return jsonify({"error": f"No data for {nse_sym}"})
+    return jsonify(q)
+
 
 def _warmup():
     import time
